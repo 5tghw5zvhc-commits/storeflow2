@@ -1,0 +1,1043 @@
+(() => {
+  'use strict';
+
+  const STORAGE_KEY = 'storeflow-state-v1';
+  const CATEGORIES = ['Desk', 'Bed', 'Wardrobe', 'Kitchen'];
+  let storageAvailable = true;
+  let currentView = 'dashboard';
+  let toastTimer;
+  let projectPhotoDraft = '';
+  let projectPhotoBusy = false;
+  let projectPartsDraft = new Set();
+
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+  const uid = prefix => `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const esc = (value = '') => String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+  function storageGet(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch (error) {
+      storageAvailable = false;
+      return null;
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+      storageAvailable = true;
+      return true;
+    } catch (error) {
+      storageAvailable = false;
+      console.warn('StoreFlow could not save to local storage:', error);
+      return false;
+    }
+  }
+
+  function openDialog(dialog) {
+    if (!dialog) return;
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else {
+      dialog.setAttribute('open', '');
+      dialog.classList.add('dialog-fallback');
+      document.body.classList.add('dialog-open');
+    }
+  }
+
+  function closeDialog(dialog) {
+    if (!dialog) return;
+    if (typeof dialog.close === 'function') dialog.close();
+    else dialog.removeAttribute('open');
+    dialog.classList.remove('dialog-fallback');
+    if (!document.querySelector('dialog.dialog-fallback[open]')) document.body.classList.remove('dialog-open');
+  }
+
+  function createInitialState() {
+    const now = new Date().toISOString();
+    return {
+      version: 3,
+      activeProjectId: null,
+      selectedOrderId: null,
+      projects: [],
+      parts: [],
+      orders: [],
+      activity: [
+        { id: uid('activity'), text: 'StoreFlow workspace ready', detail: 'Create a project or add your first master part to begin.', createdAt: now }
+      ]
+    };
+  }
+
+  function migrateState(input) {
+    const source = input && typeof input === 'object' ? input : createInitialState();
+    const projects = Array.isArray(source.projects) ? source.projects.map(project => ({
+      id: project.id || uid('project'),
+      name: String(project.name || 'Untitled project'),
+      location: String(project.location || ''),
+      reference: String(project.reference || ''),
+      photo: String(project.photo || project.photoDataUrl || ''),
+      createdAt: project.createdAt || new Date().toISOString()
+    })) : [];
+    const validProjectIds = new Set(projects.map(project => project.id));
+
+    const grouped = new Map();
+    const oldToNew = new Map();
+    const sourceParts = Array.isArray(source.parts) ? source.parts : [];
+
+    sourceParts.forEach(oldPart => {
+      const code = String(oldPart.code || '').trim().toUpperCase() || `PART-${grouped.size + 1}`;
+      const key = code;
+      const links = [
+        ...(Array.isArray(oldPart.projectIds) ? oldPart.projectIds : []),
+        ...(oldPart.projectId ? [oldPart.projectId] : [])
+      ].filter(id => validProjectIds.has(id));
+
+      if (!grouped.has(key)) {
+        const newPart = {
+          id: oldPart.id || uid('part'),
+          code,
+          name: String(oldPart.name || 'Unnamed part'),
+          category: String(oldPart.category || 'Other'),
+          quantity: Math.max(0, Number(oldPart.quantity) || 0),
+          size: String(oldPart.size || oldPart.dimensions || ''),
+          assemblyPosition: positiveIntegerOrBlank(oldPart.assemblyPosition ?? oldPart.partNumber),
+          assemblyTotal: positiveIntegerOrBlank(oldPart.assemblyTotal ?? oldPart.totalParts),
+          projectIds: [...new Set(links)],
+          notes: String(oldPart.notes || '')
+        };
+        grouped.set(key, newPart);
+      } else {
+        const existing = grouped.get(key);
+        existing.quantity = Math.max(existing.quantity, Math.max(0, Number(oldPart.quantity) || 0));
+        existing.projectIds = [...new Set([...existing.projectIds, ...links])];
+        if (!existing.size && (oldPart.size || oldPart.dimensions)) existing.size = String(oldPart.size || oldPart.dimensions);
+      }
+      oldToNew.set(oldPart.id, grouped.get(key).id);
+    });
+
+    const parts = [...grouped.values()];
+    const validPartIds = new Set(parts.map(part => part.id));
+    const orders = (Array.isArray(source.orders) ? source.orders : [])
+      .filter(order => validProjectIds.has(order.projectId))
+      .map(order => ({
+        id: order.id || uid('order'),
+        projectId: order.projectId,
+        name: String(order.name || 'Untitled order'),
+        notes: String(order.notes || ''),
+        createdAt: order.createdAt || new Date().toISOString(),
+        items: (Array.isArray(order.items) ? order.items : []).map(item => ({
+          id: item.id || uid('item'),
+          partId: oldToNew.get(item.partId) || item.partId,
+          category: String(item.category || 'Other'),
+          quantityNeeded: Math.max(1, Number(item.quantityNeeded) || 1),
+          packed: Boolean(item.packed)
+        })).filter(item => validPartIds.has(item.partId))
+      }));
+
+    return {
+      version: 2,
+      activeProjectId: validProjectIds.has(source.activeProjectId) ? source.activeProjectId : (projects[0]?.id || null),
+      selectedOrderId: source.selectedOrderId || null,
+      projects,
+      parts,
+      orders,
+      activity: Array.isArray(source.activity) ? source.activity : []
+    };
+  }
+
+  function positiveIntegerOrBlank(value) {
+    const number = Number(value);
+    return Number.isInteger(number) && number > 0 ? number : '';
+  }
+
+  function loadState() {
+    try {
+      const raw = storageGet(STORAGE_KEY);
+      if (!raw) return createInitialState();
+      return migrateState(JSON.parse(raw));
+    } catch (error) {
+      console.error('Could not load StoreFlow data:', error);
+      return createInitialState();
+    }
+  }
+
+  let state = loadState();
+
+  const els = {
+    sidebar: $('.sidebar'), menuBtn: $('#menuBtn'), pageTitle: $('#pageTitle'), pageEyebrow: $('#pageEyebrow'),
+    activeProjectSelect: $('#activeProjectSelect'), quickAddBtn: $('#quickAddBtn'), alertBar: $('#alertBar'), storageNotice: $('#storageNotice'),
+    statProjects: $('#statProjects'), statParts: $('#statParts'), statLow: $('#statLow'), statOut: $('#statOut'), dashboardProjectName: $('#dashboardProjectName'),
+    categoryProgress: $('#categoryProgress'), warningList: $('#warningList'), activityList: $('#activityList'),
+    projectCards: $('#projectCards'), newProjectBtn: $('#newProjectBtn'),
+    inventorySearch: $('#inventorySearch'), inventoryProjectFilter: $('#inventoryProjectFilter'), inventoryStockFilter: $('#inventoryStockFilter'), inventorySort: $('#inventorySort'),
+    addPartBtn: $('#addPartBtn'), inventoryTableBody: $('#inventoryTableBody'), inventoryEmpty: $('#inventoryEmpty'), inventoryCards: $('#inventoryCards'),
+    orderSelect: $('#orderSelect'), newOrderBtn: $('#newOrderBtn'), deleteOrderBtn: $('#deleteOrderBtn'), orderSummary: $('#orderSummary'), orderBoards: $('#orderBoards'),
+    exportBtn: $('#exportBtn'), importInput: $('#importInput'), resetBtn: $('#resetBtn'),
+    projectDialog: $('#projectDialog'), projectForm: $('#projectForm'), projectDialogTitle: $('#projectDialogTitle'), projectPhotoInput: $('#projectPhotoInput'),
+    projectPhotoPreview: $('#projectPhotoPreview'), removeProjectPhotoBtn: $('#removeProjectPhotoBtn'),
+    projectPartsDialog: $('#projectPartsDialog'), projectPartsForm: $('#projectPartsForm'), projectPartsTitle: $('#projectPartsTitle'), projectPartsSearch: $('#projectPartsSearch'), projectPartsList: $('#projectPartsList'),
+    partDialog: $('#partDialog'), partForm: $('#partForm'), partDialogTitle: $('#partDialogTitle'), partProjectCheckboxes: $('#partProjectCheckboxes'),
+    orderDialog: $('#orderDialog'), orderForm: $('#orderForm'), orderItemDialog: $('#orderItemDialog'), orderItemForm: $('#orderItemForm'), availabilityHint: $('#availabilityHint'), toast: $('#toast')
+  };
+
+  const viewMeta = {
+    dashboard: ['Dashboard', 'OVERVIEW'], projects: ['Projects', 'WORKSPACES'], inventory: ['Inventory', 'MASTER STOCK'],
+    orders: ['Assembly orders', 'PALLET BUILDING'], settings: ['Data & settings', 'WORKSPACE']
+  };
+
+  function saveState() {
+    storageSet(STORAGE_KEY, JSON.stringify(state));
+    renderStorageNotice();
+  }
+
+  function renderStorageNotice() {
+    els.storageNotice?.classList.toggle('hidden', storageAvailable);
+  }
+
+  function addActivity(text, detail = '') {
+    state.activity.unshift({ id: uid('activity'), text, detail, createdAt: new Date().toISOString() });
+    state.activity = state.activity.slice(0, 40);
+  }
+
+  function formatDate(iso) {
+    try {
+      return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+    } catch (error) {
+      return '';
+    }
+  }
+
+  function getActiveProject() {
+    return state.projects.find(project => project.id === state.activeProjectId) || null;
+  }
+
+  function getProjectName(id) {
+    return state.projects.find(project => project.id === id)?.name || 'Unknown project';
+  }
+
+  function partInProject(part, projectId) {
+    return Boolean(projectId && Array.isArray(part.projectIds) && part.projectIds.includes(projectId));
+  }
+
+  function getProjectParts(projectId) {
+    return state.parts.filter(part => partInProject(part, projectId));
+  }
+
+  function getProjectNames(part) {
+    return (part.projectIds || []).map(getProjectName).filter(name => name !== 'Unknown project');
+  }
+
+  function getActiveOrders() {
+    return state.orders.filter(order => order.projectId === state.activeProjectId);
+  }
+
+  function getSelectedOrder() {
+    const activeOrders = getActiveOrders();
+    let selected = activeOrders.find(order => order.id === state.selectedOrderId);
+    if (!selected && activeOrders.length) {
+      selected = activeOrders[0];
+      state.selectedOrderId = selected.id;
+    }
+    return selected || null;
+  }
+
+  function stockStatus(quantity) {
+    if (quantity <= 0) return { key: 'out', label: 'Out of stock' };
+    if (quantity <= 4) return { key: 'low', label: 'Low stock' };
+    return { key: 'healthy', label: 'In stock' };
+  }
+
+  function assemblyLabel(part) {
+    return part.assemblyPosition && part.assemblyTotal ? `${part.assemblyPosition}/${part.assemblyTotal}` : '—';
+  }
+
+  function showToast(message) {
+    clearTimeout(toastTimer);
+    els.toast.textContent = message;
+    els.toast.classList.remove('hidden');
+    toastTimer = setTimeout(() => els.toast.classList.add('hidden'), 3400);
+  }
+
+  function switchView(view) {
+    currentView = view;
+    $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === view));
+    $$('.view').forEach(section => section.classList.toggle('active-view', section.id === `${view}View`));
+    const [title, eyebrow] = viewMeta[view] || viewMeta.dashboard;
+    els.pageTitle.textContent = title;
+    els.pageEyebrow.textContent = eyebrow;
+    els.sidebar.classList.remove('open');
+    if (view === 'inventory') renderInventory();
+    if (view === 'orders') renderOrders();
+  }
+
+  function ensureValidSelections() {
+    if (!state.projects.some(project => project.id === state.activeProjectId)) state.activeProjectId = state.projects[0]?.id || null;
+    const activeOrders = getActiveOrders();
+    if (!activeOrders.some(order => order.id === state.selectedOrderId)) state.selectedOrderId = activeOrders[0]?.id || null;
+  }
+
+  function renderAll() {
+    ensureValidSelections();
+    renderProjectSelectors();
+    renderDashboard();
+    renderProjects();
+    renderInventory();
+    renderOrders();
+    renderAlertBar();
+    saveState();
+  }
+
+  function renderProjectSelectors() {
+    const projectOptions = state.projects.length
+      ? state.projects.map(project => `<option value="${esc(project.id)}">${esc(project.name)}</option>`).join('')
+      : '<option value="">No projects yet</option>';
+
+    els.activeProjectSelect.innerHTML = projectOptions;
+    els.activeProjectSelect.value = state.activeProjectId || '';
+    els.activeProjectSelect.disabled = !state.projects.length;
+
+    const previousFilter = els.inventoryProjectFilter.value || 'all';
+    els.inventoryProjectFilter.innerHTML = `<option value="all">All master parts</option><option value="unassigned">Not in a project</option>${projectOptions}`;
+    els.inventoryProjectFilter.value = [...els.inventoryProjectFilter.options].some(option => option.value === previousFilter) ? previousFilter : 'all';
+
+    els.quickAddBtn.disabled = false;
+    els.addPartBtn.disabled = false;
+    els.newOrderBtn.disabled = !state.projects.length;
+  }
+
+  function renderAlertBar() {
+    const parts = state.activeProjectId ? getProjectParts(state.activeProjectId) : state.parts;
+    const low = parts.filter(part => part.quantity > 0 && part.quantity <= 4).length;
+    const out = parts.filter(part => part.quantity <= 0).length;
+    if (!low && !out) {
+      els.alertBar.classList.add('hidden');
+      return;
+    }
+    const scope = getActiveProject()?.name || 'Master inventory';
+    const messages = [];
+    if (out) messages.push(`${out} out of stock`);
+    if (low) messages.push(`${low} low stock`);
+    els.alertBar.textContent = `⚠ ${scope}: ${messages.join(' and ')}. Changes affect every linked project.`;
+    els.alertBar.classList.remove('hidden');
+  }
+
+  function renderDashboard() {
+    const activeParts = state.activeProjectId ? getProjectParts(state.activeProjectId) : state.parts;
+    const lowParts = activeParts.filter(part => part.quantity > 0 && part.quantity <= 4);
+    const outParts = activeParts.filter(part => part.quantity <= 0);
+
+    els.statProjects.textContent = state.projects.length;
+    els.statParts.textContent = state.parts.length;
+    els.statLow.textContent = lowParts.length;
+    els.statOut.textContent = outParts.length;
+    els.dashboardProjectName.textContent = getActiveProject()?.name || 'Create your first project';
+
+    const order = getSelectedOrder();
+    els.categoryProgress.innerHTML = CATEGORIES.map(category => {
+      const items = order?.items.filter(item => item.category === category) || [];
+      const packed = items.filter(item => item.packed).length;
+      const percentage = items.length ? Math.round((packed / items.length) * 100) : 0;
+      return `<div class="category-card"><div class="top"><strong>${category}</strong><span>${packed}/${items.length}</span></div><div class="progress-track"><div class="progress-fill" style="width:${percentage}%"></div></div></div>`;
+    }).join('');
+
+    const warnings = [...outParts, ...lowParts].sort((a, b) => a.quantity - b.quantity).slice(0, 7);
+    els.warningList.innerHTML = warnings.length
+      ? warnings.map(part => `<div class="warning-item"><div><strong>${esc(part.code)} — ${esc(part.name)}</strong><span>${esc(part.category)}${part.size ? ` · ${esc(part.size)}` : ''}</span></div><span class="qty-pill ${part.quantity <= 0 ? 'out' : ''}">${part.quantity}</span></div>`).join('')
+      : state.parts.length
+        ? '<div class="empty-state"><strong>Stock levels look healthy.</strong><span>No low or empty shared parts in the active project.</span></div>'
+        : '<div class="empty-state"><strong>No stock recorded yet.</strong><span>Add your first master part to begin tracking quantities.</span></div>';
+
+    els.activityList.innerHTML = state.activity.length
+      ? state.activity.slice(0, 8).map(activity => `<div class="activity-item"><div><strong>${esc(activity.text)}</strong><span>${esc(activity.detail)}</span></div><span>${formatDate(activity.createdAt)}</span></div>`).join('')
+      : '<div class="empty-state"><strong>No activity yet.</strong><span>Your changes will appear here.</span></div>';
+  }
+
+  function renderProjects() {
+    if (!state.projects.length) {
+      els.projectCards.innerHTML = '<div class="empty-state panel"><strong>No projects yet.</strong><span>Create a project, then include parts from the master inventory.</span></div>';
+      return;
+    }
+
+    els.projectCards.innerHTML = state.projects.map(project => {
+      const linkedParts = getProjectParts(project.id);
+      const totalQty = linkedParts.reduce((sum, part) => sum + part.quantity, 0);
+      const orderCount = state.orders.filter(order => order.projectId === project.id).length;
+      const isActive = project.id === state.activeProjectId;
+      const photo = project.photo
+        ? `<img src="${esc(project.photo)}" alt="${esc(project.name)}" />`
+        : '<div class="project-photo-placeholder"><span>SF</span><small>Add project photo</small></div>';
+      return `<article class="project-card ${isActive ? 'active' : ''}">
+        <div class="project-card-photo">${photo}</div>
+        <div class="project-card-body">
+          <div class="project-card-head"><div><p class="eyebrow">${isActive ? 'ACTIVE PROJECT' : 'PROJECT'}</p><h3>${esc(project.name)}</h3></div><button class="icon-button project-delete" data-id="${esc(project.id)}" aria-label="Delete project">×</button></div>
+          <p class="muted">${esc(project.location || 'No location set')}${project.reference ? ` · ${esc(project.reference)}` : ''}</p>
+          <div class="project-meta"><span class="meta-chip">${linkedParts.length} linked parts</span><span class="meta-chip">${totalQty} shared units</span><span class="meta-chip">${orderCount} orders</span></div>
+          <div class="project-actions project-actions-wrap">
+            <button class="${isActive ? 'secondary' : 'primary'} project-open" data-id="${esc(project.id)}">${isActive ? 'Open stock' : 'Make active'}</button>
+            <button class="secondary project-manage-parts" data-id="${esc(project.id)}">Manage parts</button>
+            <button class="secondary project-edit" data-id="${esc(project.id)}">Edit project</button>
+          </div>
+        </div>
+      </article>`;
+    }).join('');
+  }
+
+  function getFilteredInventory() {
+    const query = els.inventorySearch.value.trim().toLowerCase();
+    const projectFilter = els.inventoryProjectFilter.value || 'all';
+    const stockFilter = els.inventoryStockFilter.value || 'all';
+    const sort = els.inventorySort.value || 'name';
+
+    const filtered = state.parts.filter(part => {
+      const searchable = [part.code, part.name, part.size, part.category, assemblyLabel(part), ...getProjectNames(part)].join(' ').toLowerCase();
+      const matchesQuery = !query || searchable.includes(query);
+      const matchesProject = projectFilter === 'all'
+        || (projectFilter === 'unassigned' && !(part.projectIds || []).length)
+        || partInProject(part, projectFilter);
+      const matchesStock = stockFilter === 'all'
+        || (stockFilter === 'low' && part.quantity > 0 && part.quantity <= 4)
+        || (stockFilter === 'out' && part.quantity <= 0)
+        || (stockFilter === 'healthy' && part.quantity >= 5);
+      return matchesQuery && matchesProject && matchesStock;
+    });
+
+    filtered.sort((a, b) => {
+      if (sort === 'code') return a.code.localeCompare(b.code, undefined, { numeric: true });
+      if (sort === 'qtyAsc') return a.quantity - b.quantity || a.name.localeCompare(b.name);
+      if (sort === 'qtyDesc') return b.quantity - a.quantity || a.name.localeCompare(b.name);
+      return a.name.localeCompare(b.name);
+    });
+    return filtered;
+  }
+
+  function projectChips(part, limit = 3) {
+    const names = getProjectNames(part);
+    if (!names.length) return '<span class="meta-chip muted-chip">Unassigned</span>';
+    const shown = names.slice(0, limit).map(name => `<span class="meta-chip">${esc(name)}</span>`).join('');
+    return `${shown}${names.length > limit ? `<span class="meta-chip">+${names.length - limit}</span>` : ''}`;
+  }
+
+  function renderInventory() {
+    const parts = getFilteredInventory();
+    els.inventoryTableBody.innerHTML = parts.map(part => {
+      const status = stockStatus(part.quantity);
+      return `<tr>
+        <td><span class="part-code">${esc(part.code)}</span></td>
+        <td><strong>${esc(part.name)}</strong>${part.notes ? `<br><small class="muted">${esc(part.notes)}</small>` : ''}</td>
+        <td>${esc(part.size || '—')}</td>
+        <td><span class="assembly-badge">${esc(assemblyLabel(part))}</span></td>
+        <td>${esc(part.category)}</td>
+        <td><div class="project-chip-row">${projectChips(part, 2)}</div></td>
+        <td><div class="stock-control"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="Reduce shared quantity">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="Increase shared quantity">+</button></div></td>
+        <td><span class="status ${status.key}">${status.label}</span></td>
+        <td><div class="row-actions"><button type="button" data-action="edit" data-id="${esc(part.id)}">Edit</button><button type="button" data-action="delete" data-id="${esc(part.id)}">Delete</button></div></td>
+      </tr>`;
+    }).join('');
+    els.inventoryEmpty.classList.toggle('hidden', parts.length > 0);
+
+    els.inventoryCards.innerHTML = parts.length ? parts.map(part => {
+      const status = stockStatus(part.quantity);
+      return `<article class="inventory-card">
+        <div class="inventory-card-head"><div><span class="part-code">${esc(part.code)}</span><h3>${esc(part.name)}</h3></div><span class="status ${status.key}">${status.label}</span></div>
+        <div class="inventory-card-meta"><span class="meta-chip">${esc(part.category)}</span><span class="meta-chip">Size: ${esc(part.size || '—')}</span><span class="meta-chip">Assembly: ${esc(assemblyLabel(part))}</span>${part.notes ? `<span class="meta-chip">${esc(part.notes)}</span>` : ''}</div>
+        <div class="project-chip-row card-projects">${projectChips(part, 4)}</div>
+        <div class="shared-stock-label">Shared quantity across every linked project</div>
+        <div class="inventory-card-bottom"><div class="stock-control large"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="Reduce shared quantity">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="Increase shared quantity">+</button></div><div class="row-actions"><button type="button" data-action="edit" data-id="${esc(part.id)}">Edit</button><button type="button" data-action="delete" data-id="${esc(part.id)}">Delete</button></div></div>
+      </article>`;
+    }).join('') : '<div class="empty-state"><strong>No parts match these filters.</strong><span>Add a master part or change the filters.</span></div>';
+  }
+
+  function renderOrders() {
+    const orders = getActiveOrders();
+    els.orderSelect.innerHTML = orders.length ? orders.map(order => `<option value="${esc(order.id)}">${esc(order.name)}</option>`).join('') : '<option value="">No orders yet</option>';
+    els.orderSelect.disabled = !orders.length;
+    els.deleteOrderBtn.disabled = !orders.length;
+    const order = getSelectedOrder();
+    if (order) els.orderSelect.value = order.id;
+
+    if (!state.activeProjectId) {
+      els.orderSummary.innerHTML = '';
+      els.orderBoards.innerHTML = '<div class="empty-state panel"><strong>Create a project first.</strong><span>Projects determine which shared parts are available to an assembly order.</span></div>';
+      return;
+    }
+    if (!order) {
+      els.orderSummary.innerHTML = '';
+      els.orderBoards.innerHTML = '<div class="empty-state panel"><strong>No assembly order for this project.</strong><span>Create an order, then add project parts under Desk, Bed, Wardrobe and Kitchen.</span></div>';
+      return;
+    }
+
+    const total = order.items.length;
+    const packed = order.items.filter(item => item.packed).length;
+    const shortages = order.items.filter(item => {
+      if (item.packed) return false;
+      const part = state.parts.find(candidate => candidate.id === item.partId);
+      return !part || part.quantity < item.quantityNeeded;
+    }).length;
+    els.orderSummary.innerHTML = `<div class="summary-chip"><span>Required lines</span><strong>${total}</strong></div><div class="summary-chip"><span>Packed lines</span><strong>${packed}</strong></div><div class="summary-chip"><span>Shortages</span><strong>${shortages}</strong></div>`;
+
+    els.orderBoards.innerHTML = CATEGORIES.map(category => {
+      const items = order.items.filter(item => item.category === category);
+      const itemHtml = items.length ? items.map(item => {
+        const part = state.parts.find(candidate => candidate.id === item.partId);
+        const available = part?.quantity ?? 0;
+        const insufficient = !item.packed && available < item.quantityNeeded;
+        const codeName = part ? `${part.code} — ${part.name}` : 'Deleted master part';
+        const metadata = part ? [part.size, assemblyLabel(part) !== '—' ? `Part ${assemblyLabel(part)}` : ''].filter(Boolean).join(' · ') : '';
+        const stockText = item.packed ? 'Packed on pallet; shared stock deducted' : `${available} in shared stock${metadata ? ` · ${metadata}` : ''}`;
+        return `<div class="check-item ${item.packed ? 'packed' : ''}">
+          <input type="checkbox" data-action="toggle-pack" data-item-id="${esc(item.id)}" ${item.packed ? 'checked' : ''} ${!part ? 'disabled' : ''} />
+          <div class="part-label"><strong>${esc(codeName)}</strong><span>${esc(stockText)}</span></div>
+          <span class="need-chip ${insufficient ? 'short' : ''}">Need ${item.quantityNeeded}</span>
+          <button class="remove-item" data-action="remove-order-item" data-item-id="${esc(item.id)}" aria-label="Remove item">×</button>
+        </div>`;
+      }).join('') : '<div class="column-empty">No parts added to this section.</div>';
+      return `<article class="order-column"><div class="order-column-head"><h3>${category}</h3><button data-action="add-order-item" data-category="${category}">+ Add part</button></div><div class="checklist">${itemHtml}</div></article>`;
+    }).join('');
+  }
+
+  function renderPartProjectCheckboxes(selectedIds = []) {
+    const selected = new Set(selectedIds);
+    els.partProjectCheckboxes.innerHTML = state.projects.length
+      ? state.projects.map(project => `<label class="check-row"><input type="checkbox" name="projectIds" value="${esc(project.id)}" ${selected.has(project.id) ? 'checked' : ''} /><span><strong>${esc(project.name)}</strong><small>${esc(project.location || 'No location')}</small></span></label>`).join('')
+      : '<div class="checkbox-empty">No projects yet. You can save the part now and assign it later.</div>';
+  }
+
+  function openPartDialog(part = null) {
+    els.partForm.reset();
+    $('[name="id"]', els.partForm).value = part?.id || '';
+    $('[name="code"]', els.partForm).value = part?.code || '';
+    $('[name="name"]', els.partForm).value = part?.name || '';
+    $('[name="quantity"]', els.partForm).value = part?.quantity ?? 1;
+    $('[name="size"]', els.partForm).value = part?.size || '';
+    $('[name="category"]', els.partForm).value = part?.category || 'Desk';
+    $('[name="assemblyPosition"]', els.partForm).value = part?.assemblyPosition || '';
+    $('[name="assemblyTotal"]', els.partForm).value = part?.assemblyTotal || '';
+    $('[name="notes"]', els.partForm).value = part?.notes || '';
+    renderPartProjectCheckboxes(part?.projectIds || (state.activeProjectId ? [state.activeProjectId] : []));
+    els.partDialogTitle.textContent = part ? 'Edit master part' : 'Add a master part';
+    openDialog(els.partDialog);
+  }
+
+  function updateProjectPhotoPreview() {
+    els.projectPhotoPreview.innerHTML = projectPhotoDraft
+      ? `<img src="${esc(projectPhotoDraft)}" alt="Project preview" />`
+      : '<span>No photo selected</span>';
+    els.removeProjectPhotoBtn.disabled = !projectPhotoDraft;
+  }
+
+  function openProjectDialog(project = null) {
+    els.projectForm.reset();
+    $('[name="id"]', els.projectForm).value = project?.id || '';
+    $('[name="name"]', els.projectForm).value = project?.name || '';
+    $('[name="location"]', els.projectForm).value = project?.location || '';
+    $('[name="reference"]', els.projectForm).value = project?.reference || '';
+    projectPhotoDraft = project?.photo || '';
+    projectPhotoBusy = false;
+    els.projectDialogTitle.textContent = project ? 'Edit project' : 'Create a new project';
+    updateProjectPhotoPreview();
+    openDialog(els.projectDialog);
+  }
+
+  function compressImage(file) {
+    return new Promise((resolve, reject) => {
+      if (!file || !file.type.startsWith('image/')) return reject(new Error('Choose an image file.'));
+      const objectUrl = URL.createObjectURL(file);
+      const image = new Image();
+      image.onload = () => {
+        try {
+          const maxDimension = 1200;
+          const scale = Math.min(1, maxDimension / Math.max(image.naturalWidth, image.naturalHeight));
+          const width = Math.max(1, Math.round(image.naturalWidth * scale));
+          const height = Math.max(1, Math.round(image.naturalHeight * scale));
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const context = canvas.getContext('2d');
+          context.drawImage(image, 0, 0, width, height);
+          URL.revokeObjectURL(objectUrl);
+          resolve(canvas.toDataURL('image/jpeg', 0.72));
+        } catch (error) {
+          URL.revokeObjectURL(objectUrl);
+          reject(error);
+        }
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        reject(new Error('This photo could not be opened.'));
+      };
+      image.src = objectUrl;
+    });
+  }
+
+  function renderProjectPartsList() {
+    const projectId = $('[name="projectId"]', els.projectPartsForm).value;
+    const query = els.projectPartsSearch.value.trim().toLowerCase();
+    const parts = state.parts.filter(part => !query || [part.code, part.name, part.size, part.category].join(' ').toLowerCase().includes(query));
+    els.projectPartsList.innerHTML = parts.length
+      ? parts.map(part => `<label class="check-row"><input type="checkbox" value="${esc(part.id)}" ${projectPartsDraft.has(part.id) ? 'checked' : ''} /><span><strong>${esc(part.code)} — ${esc(part.name)}</strong><small>${esc(part.category)} · ${part.quantity} shared units${part.size ? ` · ${esc(part.size)}` : ''}${assemblyLabel(part) !== '—' ? ` · ${esc(assemblyLabel(part))}` : ''}</small></span></label>`).join('')
+      : `<div class="checkbox-empty">${state.parts.length ? 'No master parts match this search.' : 'No master parts yet. Add them in Inventory first.'}</div>`;
+    if (!projectId) closeDialog(els.projectPartsDialog);
+  }
+
+  function openProjectPartsDialog(projectId) {
+    const project = state.projects.find(candidate => candidate.id === projectId);
+    if (!project) return;
+    $('[name="projectId"]', els.projectPartsForm).value = projectId;
+    projectPartsDraft = new Set(state.parts.filter(part => partInProject(part, projectId)).map(part => part.id));
+    els.projectPartsSearch.value = '';
+    els.projectPartsTitle.textContent = `Parts in ${project.name}`;
+    renderProjectPartsList();
+    openDialog(els.projectPartsDialog);
+  }
+
+  function openOrderItemDialog(category) {
+    const order = getSelectedOrder();
+    if (!order) return showToast('Create an order first.');
+    const availableParts = state.parts
+      .filter(part => partInProject(part, state.activeProjectId) && (part.category === category || part.category === 'Other'))
+      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+    const select = $('[name="partId"]', els.orderItemForm);
+    select.innerHTML = availableParts.length
+      ? availableParts.map(part => `<option value="${esc(part.id)}">${esc(part.code)} — ${esc(part.name)} (${part.quantity} shared)</option>`).join('')
+      : '<option value="">No matching project parts</option>';
+    select.disabled = !availableParts.length;
+    $('[name="category"]', els.orderItemForm).value = category;
+    $('[name="quantityNeeded"]', els.orderItemForm).value = 1;
+    $('button[type="submit"]', els.orderItemForm).disabled = !availableParts.length;
+    updateAvailabilityHint();
+    openDialog(els.orderItemDialog);
+  }
+
+  function updateAvailabilityHint() {
+    const partId = $('[name="partId"]', els.orderItemForm).value;
+    const needed = Math.max(1, Number($('[name="quantityNeeded"]', els.orderItemForm).value) || 1);
+    const part = state.parts.find(candidate => candidate.id === partId);
+    els.availabilityHint.className = 'availability-hint';
+    if (!part) {
+      els.availabilityHint.textContent = 'Include a matching master part in this project first.';
+      els.availabilityHint.classList.add('danger');
+      return;
+    }
+    if (part.quantity <= 0) {
+      els.availabilityHint.textContent = `Out of shared stock. You need ${needed}, but none are available.`;
+      els.availabilityHint.classList.add('danger');
+    } else if (part.quantity < needed) {
+      els.availabilityHint.textContent = `Shortage: you need ${needed}, but only ${part.quantity} shared units are available.`;
+      els.availabilityHint.classList.add('danger');
+    } else if (part.quantity <= 4 || part.quantity - needed <= 4) {
+      els.availabilityHint.textContent = `${part.quantity} shared units available. Packing this leaves ${part.quantity - needed}, which is low stock.`;
+      els.availabilityHint.classList.add('warning');
+    } else {
+      els.availabilityHint.textContent = `${part.quantity} shared units available. Packing this leaves ${part.quantity - needed}.`;
+    }
+  }
+
+  function removePartFromProject(part, projectId) {
+    if (!partInProject(part, projectId)) return 0;
+    let removedItems = 0;
+    state.orders.filter(order => order.projectId === projectId).forEach(order => {
+      order.items.filter(item => item.partId === part.id).forEach(item => {
+        if (item.packed) part.quantity += item.quantityNeeded;
+        removedItems += 1;
+      });
+      order.items = order.items.filter(item => item.partId !== part.id);
+    });
+    part.projectIds = part.projectIds.filter(id => id !== projectId);
+    return removedItems;
+  }
+
+  function setPartProjects(part, nextProjectIds) {
+    const next = new Set(nextProjectIds.filter(id => state.projects.some(project => project.id === id)));
+    let removedItems = 0;
+    [...(part.projectIds || [])].forEach(projectId => {
+      if (!next.has(projectId)) removedItems += removePartFromProject(part, projectId);
+    });
+    next.forEach(projectId => {
+      if (!part.projectIds.includes(projectId)) part.projectIds.push(projectId);
+    });
+    part.projectIds = [...new Set(part.projectIds)].filter(id => next.has(id));
+    return removedItems;
+  }
+
+  function restorePackedStockForOrders(orders) {
+    orders.forEach(order => order.items.filter(item => item.packed).forEach(item => {
+      const part = state.parts.find(candidate => candidate.id === item.partId);
+      if (part) part.quantity += item.quantityNeeded;
+    }));
+  }
+
+  function deleteProject(projectId) {
+    const project = state.projects.find(item => item.id === projectId);
+    if (!project) return;
+    if (!window.confirm(`Delete “${project.name}”? Its orders will be deleted and packed quantities restored. Master parts will remain in Inventory.`)) return;
+    const projectOrders = state.orders.filter(order => order.projectId === projectId);
+    restorePackedStockForOrders(projectOrders);
+    state.orders = state.orders.filter(order => order.projectId !== projectId);
+    state.parts.forEach(part => { part.projectIds = (part.projectIds || []).filter(id => id !== projectId); });
+    state.projects = state.projects.filter(item => item.id !== projectId);
+    addActivity('Project deleted', `${project.name}; master parts kept`);
+    ensureValidSelections();
+    renderAll();
+    showToast('Project deleted. Shared master parts were kept.');
+  }
+
+  function deleteOrder(orderId) {
+    const order = state.orders.find(candidate => candidate.id === orderId);
+    if (!order) return;
+    if (!window.confirm(`Delete “${order.name}”? Packed quantities will be restored to shared inventory.`)) return;
+    restorePackedStockForOrders([order]);
+    state.orders = state.orders.filter(candidate => candidate.id !== orderId);
+    addActivity('Assembly order deleted', order.name);
+    state.selectedOrderId = null;
+    renderAll();
+    showToast('Order deleted and packed stock restored.');
+  }
+
+  function deletePart(partId) {
+    const part = state.parts.find(candidate => candidate.id === partId);
+    if (!part) return;
+    const referenced = state.orders.some(order => order.items.some(item => item.partId === partId));
+    const message = referenced
+      ? `Delete master part ${part.code} — ${part.name}? It will be removed from every linked project and assembly checklist. Packed quantities will not be restored because the master record is being deleted.`
+      : `Delete master part ${part.code} — ${part.name} from every project?`;
+    if (!window.confirm(message)) return;
+    state.orders.forEach(order => { order.items = order.items.filter(item => item.partId !== partId); });
+    state.parts = state.parts.filter(candidate => candidate.id !== partId);
+    addActivity('Master part deleted', `${part.code} — ${part.name}`);
+    renderAll();
+    showToast('Master part deleted everywhere.');
+  }
+
+  function adjustPartQuantity(partId, delta) {
+    const part = state.parts.find(candidate => candidate.id === partId);
+    if (!part) return;
+    const next = Math.max(0, part.quantity + delta);
+    if (next === part.quantity) return;
+    part.quantity = next;
+    addActivity('Shared stock quantity changed', `${part.code} is now ${part.quantity} in every linked project`);
+    renderAll();
+  }
+
+  function togglePacked(itemId, shouldPack) {
+    const order = getSelectedOrder();
+    const item = order?.items.find(candidate => candidate.id === itemId);
+    if (!item) return;
+    const part = state.parts.find(candidate => candidate.id === item.partId);
+    if (!part) {
+      showToast('This master part no longer exists.');
+      renderOrders();
+      return;
+    }
+    if (shouldPack && !item.packed) {
+      if (part.quantity < item.quantityNeeded) {
+        showToast(`Not enough ${part.code}. Need ${item.quantityNeeded}; only ${part.quantity} shared units available.`);
+        renderOrders();
+        return;
+      }
+      part.quantity -= item.quantityNeeded;
+      item.packed = true;
+      addActivity('Part packed on pallet', `${part.code} × ${item.quantityNeeded}; shared stock updated`);
+    } else if (!shouldPack && item.packed) {
+      part.quantity += item.quantityNeeded;
+      item.packed = false;
+      addActivity('Part removed from pallet', `${part.code} × ${item.quantityNeeded} restored to shared stock`);
+    }
+    renderAll();
+  }
+
+  function removeOrderItem(itemId) {
+    const order = getSelectedOrder();
+    const item = order?.items.find(candidate => candidate.id === itemId);
+    if (!item) return;
+    const part = state.parts.find(candidate => candidate.id === item.partId);
+    if (item.packed && part) part.quantity += item.quantityNeeded;
+    order.items = order.items.filter(candidate => candidate.id !== itemId);
+    addActivity('Checklist item removed', part ? `${part.code} from ${order.name}` : order.name);
+    renderAll();
+  }
+
+  els.menuBtn.addEventListener('click', () => els.sidebar.classList.toggle('open'));
+  document.addEventListener('click', event => {
+    if (window.innerWidth <= 820 && els.sidebar.classList.contains('open') && !els.sidebar.contains(event.target) && event.target !== els.menuBtn) els.sidebar.classList.remove('open');
+  });
+  $$('.nav-item').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
+  $$('[data-jump]').forEach(button => button.addEventListener('click', () => switchView(button.dataset.jump)));
+  $$('.close-dialog').forEach(button => button.addEventListener('click', () => closeDialog(button.closest('dialog'))));
+
+  els.activeProjectSelect.addEventListener('change', () => {
+    state.activeProjectId = els.activeProjectSelect.value || null;
+    state.selectedOrderId = getActiveOrders()[0]?.id || null;
+    addActivity('Active project changed', getActiveProject()?.name || 'No project');
+    renderAll();
+  });
+
+  els.quickAddBtn.addEventListener('click', () => openPartDialog());
+  els.addPartBtn.addEventListener('click', () => openPartDialog());
+  els.newProjectBtn.addEventListener('click', () => openProjectDialog());
+  els.newOrderBtn.addEventListener('click', () => {
+    if (!state.activeProjectId) return showToast('Create a project first.');
+    els.orderForm.reset();
+    openDialog(els.orderDialog);
+  });
+
+  els.projectPhotoInput.addEventListener('change', async () => {
+    const file = els.projectPhotoInput.files?.[0];
+    if (!file) return;
+    projectPhotoBusy = true;
+    els.projectPhotoPreview.innerHTML = '<span>Preparing photo…</span>';
+    try {
+      projectPhotoDraft = await compressImage(file);
+      updateProjectPhotoPreview();
+      showToast('Project photo ready.');
+    } catch (error) {
+      console.error(error);
+      projectPhotoDraft = '';
+      updateProjectPhotoPreview();
+      showToast('Could not use that photo. Try a JPG or PNG.');
+    } finally {
+      projectPhotoBusy = false;
+    }
+  });
+
+  els.removeProjectPhotoBtn.addEventListener('click', () => {
+    projectPhotoDraft = '';
+    els.projectPhotoInput.value = '';
+    updateProjectPhotoPreview();
+  });
+
+  els.projectForm.addEventListener('submit', event => {
+    event.preventDefault();
+    if (projectPhotoBusy) return showToast('The photo is still being prepared.');
+    const data = new FormData(els.projectForm);
+    const id = String(data.get('id') || '');
+    const payload = {
+      name: String(data.get('name') || '').trim(),
+      location: String(data.get('location') || '').trim(),
+      reference: String(data.get('reference') || '').trim(),
+      photo: projectPhotoDraft
+    };
+    if (!payload.name) return;
+    if (id) {
+      const project = state.projects.find(candidate => candidate.id === id);
+      if (!project) return;
+      Object.assign(project, payload);
+      addActivity('Project updated', project.name);
+    } else {
+      const project = { id: uid('project'), ...payload, createdAt: new Date().toISOString() };
+      state.projects.push(project);
+      state.activeProjectId = project.id;
+      state.selectedOrderId = null;
+      addActivity('Project created', project.name);
+    }
+    closeDialog(els.projectDialog);
+    renderAll();
+    showToast(id ? 'Project updated.' : 'Project created and made active.');
+  });
+
+  els.partForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const data = new FormData(els.partForm);
+    const id = String(data.get('id') || '');
+    const code = String(data.get('code') || '').trim().toUpperCase();
+    const duplicate = state.parts.find(part => part.code.toUpperCase() === code && part.id !== id);
+    if (duplicate) return showToast(`Master part code ${code} already exists. Edit the existing part instead.`);
+
+    const position = positiveIntegerOrBlank(data.get('assemblyPosition'));
+    const total = positiveIntegerOrBlank(data.get('assemblyTotal'));
+    if ((position && !total) || (!position && total)) return showToast('Enter both assembly numbers, for example 2 / 5.');
+    if (position && total && position > total) return showToast('The part number cannot be higher than the total number of parts.');
+
+    const nextProjectIds = data.getAll('projectIds').map(String);
+    const payload = {
+      code,
+      name: String(data.get('name') || '').trim(),
+      quantity: Math.max(0, Number(data.get('quantity')) || 0),
+      size: String(data.get('size') || '').trim(),
+      category: String(data.get('category') || 'Other'),
+      assemblyPosition: position,
+      assemblyTotal: total,
+      notes: String(data.get('notes') || '').trim()
+    };
+    if (!payload.code || !payload.name) return;
+
+    let removedItems = 0;
+    if (id) {
+      const part = state.parts.find(candidate => candidate.id === id);
+      if (!part) return;
+      removedItems = setPartProjects(part, nextProjectIds);
+      Object.assign(part, payload);
+      addActivity('Master part updated', `${payload.code} — ${payload.name}`);
+    } else {
+      state.parts.push({ id: uid('part'), ...payload, projectIds: [...new Set(nextProjectIds)] });
+      addActivity('Master part added', `${payload.code} × ${payload.quantity}`);
+    }
+    closeDialog(els.partDialog);
+    renderAll();
+    showToast(removedItems ? `Part updated. ${removedItems} checklist item(s) were removed from unlinked projects.` : (id ? 'Master part updated everywhere.' : 'Master part added.'));
+  });
+
+  els.projectPartsSearch.addEventListener('input', renderProjectPartsList);
+  els.projectPartsList.addEventListener('change', event => {
+    const checkbox = event.target.closest('input[type="checkbox"]');
+    if (!checkbox) return;
+    if (checkbox.checked) projectPartsDraft.add(checkbox.value);
+    else projectPartsDraft.delete(checkbox.value);
+  });
+
+  els.projectPartsForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const projectId = String(new FormData(els.projectPartsForm).get('projectId') || '');
+    const project = state.projects.find(candidate => candidate.id === projectId);
+    if (!project) return;
+    let removedItems = 0;
+    state.parts.forEach(part => {
+      const shouldInclude = projectPartsDraft.has(part.id);
+      const isIncluded = partInProject(part, projectId);
+      if (shouldInclude && !isIncluded) part.projectIds.push(projectId);
+      if (!shouldInclude && isIncluded) removedItems += removePartFromProject(part, projectId);
+    });
+    addActivity('Project parts updated', `${project.name}: ${projectPartsDraft.size} linked master parts`);
+    closeDialog(els.projectPartsDialog);
+    renderAll();
+    showToast(removedItems ? `Project parts saved. ${removedItems} old checklist item(s) were removed.` : 'Project parts saved.');
+  });
+
+  els.orderForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const data = new FormData(els.orderForm);
+    const order = { id: uid('order'), projectId: state.activeProjectId, name: String(data.get('name') || '').trim(), notes: String(data.get('notes') || '').trim(), createdAt: new Date().toISOString(), items: [] };
+    if (!order.name) return;
+    state.orders.push(order);
+    state.selectedOrderId = order.id;
+    addActivity('Assembly order created', order.name);
+    closeDialog(els.orderDialog);
+    renderAll();
+    showToast('Assembly order created.');
+  });
+
+  els.orderItemForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const order = getSelectedOrder();
+    if (!order) return;
+    const data = new FormData(els.orderItemForm);
+    const partId = String(data.get('partId') || '');
+    const quantityNeeded = Math.max(1, Number(data.get('quantityNeeded')) || 1);
+    const category = String(data.get('category') || 'Other');
+    const part = state.parts.find(candidate => candidate.id === partId);
+    if (!part || !partInProject(part, state.activeProjectId)) return showToast('Choose a part included in this project.');
+    const existing = order.items.find(item => item.partId === partId && item.category === category && !item.packed);
+    if (existing) existing.quantityNeeded += quantityNeeded;
+    else order.items.push({ id: uid('item'), partId, category, quantityNeeded, packed: false });
+    addActivity('Part added to assembly order', `${part.code} × ${quantityNeeded} for ${order.name}`);
+    closeDialog(els.orderItemDialog);
+    renderAll();
+    if (part.quantity < quantityNeeded) showToast('Part added, but shared stock is insufficient.');
+    else if (part.quantity <= 4 || part.quantity - quantityNeeded <= 4) showToast('Part added. Shared stock is at or near the low threshold.');
+    else showToast('Part added to checklist.');
+  });
+
+  $('[name="partId"]', els.orderItemForm).addEventListener('change', updateAvailabilityHint);
+  $('[name="quantityNeeded"]', els.orderItemForm).addEventListener('input', updateAvailabilityHint);
+
+  els.projectCards.addEventListener('click', event => {
+    const openButton = event.target.closest('.project-open');
+    const manageButton = event.target.closest('.project-manage-parts');
+    const editButton = event.target.closest('.project-edit');
+    const deleteButton = event.target.closest('.project-delete');
+    if (openButton) {
+      const projectId = openButton.dataset.id;
+      if (state.activeProjectId === projectId) {
+        els.inventoryProjectFilter.value = projectId;
+        switchView('inventory');
+      } else {
+        state.activeProjectId = projectId;
+        state.selectedOrderId = state.orders.find(order => order.projectId === projectId)?.id || null;
+        addActivity('Active project changed', getProjectName(projectId));
+        renderAll();
+        showToast('Active project changed.');
+      }
+    }
+    if (manageButton) openProjectPartsDialog(manageButton.dataset.id);
+    if (editButton) openProjectDialog(state.projects.find(project => project.id === editButton.dataset.id));
+    if (deleteButton) deleteProject(deleteButton.dataset.id);
+  });
+
+  [els.inventorySearch, els.inventoryProjectFilter, els.inventoryStockFilter, els.inventorySort].forEach(control => control.addEventListener(control === els.inventorySearch ? 'input' : 'change', renderInventory));
+
+  function handleInventoryAction(event) {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    if (button.dataset.action === 'minus') adjustPartQuantity(button.dataset.id, -1);
+    if (button.dataset.action === 'plus') adjustPartQuantity(button.dataset.id, 1);
+    if (button.dataset.action === 'edit') openPartDialog(state.parts.find(part => part.id === button.dataset.id));
+    if (button.dataset.action === 'delete') deletePart(button.dataset.id);
+  }
+  els.inventoryTableBody.addEventListener('click', handleInventoryAction);
+  els.inventoryCards.addEventListener('click', handleInventoryAction);
+
+  els.orderSelect.addEventListener('change', () => { state.selectedOrderId = els.orderSelect.value || null; renderAll(); });
+  els.deleteOrderBtn.addEventListener('click', () => { const order = getSelectedOrder(); if (order) deleteOrder(order.id); });
+  els.orderBoards.addEventListener('click', event => {
+    const button = event.target.closest('button[data-action]');
+    if (!button) return;
+    if (button.dataset.action === 'add-order-item') openOrderItemDialog(button.dataset.category);
+    if (button.dataset.action === 'remove-order-item') removeOrderItem(button.dataset.itemId);
+  });
+  els.orderBoards.addEventListener('change', event => {
+    const checkbox = event.target.closest('input[data-action="toggle-pack"]');
+    if (checkbox) togglePacked(checkbox.dataset.itemId, checkbox.checked);
+  });
+
+  els.exportBtn.addEventListener('click', () => {
+    const backup = { ...state, exportedAt: new Date().toISOString() };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `storeflow-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 500);
+    showToast('Backup exported.');
+  });
+
+  els.importInput.addEventListener('change', async () => {
+    const file = els.importInput.files?.[0];
+    if (!file) return;
+    try {
+      const imported = migrateState(JSON.parse(await file.text()));
+      if (!window.confirm('Import this backup and replace all current local data?')) return;
+      state = imported;
+      addActivity('Backup imported', file.name);
+      ensureValidSelections();
+      renderAll();
+      showToast('Backup imported successfully.');
+    } catch (error) {
+      console.error(error);
+      showToast('Could not import this file. Please use a valid StoreFlow backup.');
+    } finally {
+      els.importInput.value = '';
+    }
+  });
+
+  els.resetBtn.addEventListener('click', () => {
+    if (!window.confirm('Erase all StoreFlow data on this device and return to a blank workspace?')) return;
+    state = createInitialState();
+    renderAll();
+    showToast('Local data reset.');
+  });
+
+  if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:') && !location.hostname.includes('livecodes')) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Service worker unavailable:', error)));
+  }
+
+  renderAll();
+  switchView(currentView);
+})();
