@@ -46,6 +46,12 @@ if (!app.includes("const STORAGE_KEY = 'storeflow-state-v1'")) {
 if (!app.includes('parseLegacyDimensions') || !app.includes('openExpandedProjectPhoto')) {
   throw new Error('The size migration or expandable-photo behavior is missing.');
 }
+if (!app.includes('includedPartIds') || !app.includes('data-action="edit-needed"') || !app.includes('updateOrderItemQuantity')) {
+  throw new Error('The streamlined pallet checklist behavior is missing.');
+}
+if (app.includes('need-chip')) {
+  throw new Error('The read-only checklist quantity chip should not remain.');
+}
 
 const manifest = JSON.parse(await readFile('manifest.webmanifest', 'utf8'));
 if (manifest.start_url !== './' || manifest.scope !== './') {

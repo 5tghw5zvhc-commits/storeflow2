@@ -535,7 +535,10 @@
         return `<div class="check-item ${item.packed ? 'packed' : ''}">
           <input type="checkbox" data-action="toggle-pack" data-item-id="${esc(item.id)}" ${item.packed ? 'checked' : ''} ${!part ? 'disabled' : ''} />
           <div class="part-label"><strong>${esc(codeName)}</strong><span>${esc(stockText)}</span></div>
-          <span class="need-chip ${insufficient ? 'short' : ''}">Need ${item.quantityNeeded}</span>
+          <label class="needed-editor ${insufficient ? 'short' : ''}">
+            <span>Needed</span>
+            <input type="number" min="1" step="1" inputmode="numeric" value="${item.quantityNeeded}" data-action="edit-needed" data-item-id="${esc(item.id)}" aria-label="Needed quantity for ${esc(codeName)}" ${!part ? 'disabled' : ''} />
+          </label>
           <button class="remove-item" data-action="remove-order-item" data-item-id="${esc(item.id)}" aria-label="Remove item">×</button>
         </div>`;
       }).join('') : '<div class="column-empty">No parts added to this section.</div>';
@@ -655,17 +658,28 @@
   function openOrderItemDialog(category) {
     const order = getSelectedOrder();
     if (!order) return showToast('Create an order first.');
-    const availableParts = state.parts
+    const includedPartIds = new Set(order.items.map(item => item.partId));
+    const matchingParts = state.parts
       .filter(part => partInProject(part, state.activeProjectId) && (part.category === category || part.category === 'Other'))
       .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+    const availableParts = matchingParts.filter(part => !includedPartIds.has(part.id));
     const select = $('[name="partId"]', els.orderItemForm);
     select.innerHTML = availableParts.length
       ? availableParts.map(part => `<option value="${esc(part.id)}">${esc(part.code)} — ${esc(part.name)} (${part.quantity} shared)</option>`).join('')
-      : '<option value="">No matching project parts</option>';
+      : `<option value="">${matchingParts.length ? 'All matching parts are already on this checklist' : 'No matching project parts'}</option>`;
     select.disabled = !availableParts.length;
     $('[name="category"]', els.orderItemForm).value = category;
     $('[name="quantityNeeded"]', els.orderItemForm).value = 1;
     $('button[type="submit"]', els.orderItemForm).disabled = !availableParts.length;
+    if (!availableParts.length) {
+      els.availabilityHint.className = 'availability-hint';
+      els.availabilityHint.textContent = matchingParts.length
+        ? 'Every matching part is already on this checklist. Change its needed amount directly on the checklist.'
+        : 'Include a matching master part in this project first.';
+      if (!matchingParts.length) els.availabilityHint.classList.add('danger');
+      openDialog(els.orderItemDialog);
+      return;
+    }
     updateAvailabilityHint();
     openDialog(els.orderItemDialog);
   }
@@ -805,6 +819,43 @@
       addActivity('Part removed from pallet', `${part.code} × ${item.quantityNeeded} restored to shared stock`);
     }
     renderAll();
+  }
+
+  function updateOrderItemQuantity(itemId, requestedQuantity) {
+    const order = getSelectedOrder();
+    const item = order?.items.find(candidate => candidate.id === itemId);
+    if (!item) return;
+    const part = state.parts.find(candidate => candidate.id === item.partId);
+    if (!part) {
+      showToast('This master part no longer exists.');
+      renderOrders();
+      return;
+    }
+
+    const numericQuantity = Number(requestedQuantity);
+    if (!Number.isFinite(numericQuantity) || numericQuantity < 1) {
+      showToast('Needed quantity must be at least 1.');
+      renderOrders();
+      return;
+    }
+    const nextQuantity = Math.floor(numericQuantity);
+    const previousQuantity = item.quantityNeeded;
+    if (nextQuantity === previousQuantity) {
+      renderOrders();
+      return;
+    }
+
+    const difference = nextQuantity - previousQuantity;
+    if (item.packed && difference > 0 && part.quantity < difference) {
+      showToast(`Not enough ${part.code}. Increasing this line needs ${difference} more; only ${part.quantity} shared units are available.`);
+      renderOrders();
+      return;
+    }
+    if (item.packed) part.quantity -= difference;
+    item.quantityNeeded = nextQuantity;
+    addActivity('Checklist amount changed', `${part.code}: ${previousQuantity} → ${nextQuantity}${item.packed ? '; packed stock adjusted' : ''}`);
+    renderAll();
+    showToast(item.packed ? 'Needed amount and shared stock updated.' : 'Needed amount updated.');
   }
 
   function removeOrderItem(itemId) {
@@ -992,9 +1043,12 @@
     const category = String(data.get('category') || 'Other');
     const part = state.parts.find(candidate => candidate.id === partId);
     if (!part || !partInProject(part, state.activeProjectId)) return showToast('Choose a part included in this project.');
-    const existing = order.items.find(item => item.partId === partId && item.category === category && !item.packed);
-    if (existing) existing.quantityNeeded += quantityNeeded;
-    else order.items.push({ id: uid('item'), partId, category, quantityNeeded, packed: false });
+    if (order.items.some(item => item.partId === partId)) {
+      closeDialog(els.orderItemDialog);
+      renderAll();
+      return showToast('That part is already on this checklist. Edit its needed amount directly on the checklist.');
+    }
+    order.items.push({ id: uid('item'), partId, category, quantityNeeded, packed: false });
     addActivity('Part added to assembly order', `${part.code} × ${quantityNeeded} for ${order.name}`);
     closeDialog(els.orderItemDialog);
     renderAll();
@@ -1052,6 +1106,8 @@
   els.orderBoards.addEventListener('change', event => {
     const checkbox = event.target.closest('input[data-action="toggle-pack"]');
     if (checkbox) togglePacked(checkbox.dataset.itemId, checkbox.checked);
+    const quantityInput = event.target.closest('input[data-action="edit-needed"]');
+    if (quantityInput) updateOrderItemQuantity(quantityInput.dataset.itemId, quantityInput.value);
   });
 
   els.exportBtn.addEventListener('click', () => {
