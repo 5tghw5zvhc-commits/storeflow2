@@ -17,6 +17,8 @@
   let stockPlannerFeedback = null;
   let expandedInventoryPartIds = new Set();
   let openInventoryMenuPartId = null;
+  let expandedStockPalletIds = new Set();
+  let openStockPalletMenuId = null;
   let activeSettingsTab = 'general';
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -602,7 +604,7 @@
         ${details}
         <div class="inventory-card-bottom">
           <div class="inventory-quantity"><span class="inventory-control-label">${esc(t('inventory.quantityLabel'))}</span><div class="stock-control large"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.reduceAria'))}">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.increaseAria'))}">+</button></div></div>
-          <label class="overflow-switch"><span>${esc(t('status.overflowing'))}</span><input aria-label="${esc(t('inventory.overflowSwitchAria', { part: part.code }))}" data-action="overflow-switch" data-id="${esc(part.id)}" type="checkbox" ${part.overflowing ? 'checked' : ''}/><span aria-hidden="true" class="switch-track"><span class="switch-thumb"></span></span></label>
+          <label class="overflow-switch"><span class="overflow-switch-label ${part.overflowing ? 'active' : ''}">${esc(t('status.overflowing'))}</span><input aria-label="${esc(t('inventory.overflowSwitchAria', { part: part.code }))}" data-action="overflow-switch" data-id="${esc(part.id)}" type="checkbox" ${part.overflowing ? 'checked' : ''}/><span aria-hidden="true" class="switch-track"><span class="switch-thumb"></span></span></label>
         </div>
       </article>`;
     }).join('') : `<div class="empty-state"><strong>${esc(t('inventory.noneMatch'))}</strong><span>${esc(t('inventory.noneMatchHint'))}</span></div>`;
@@ -839,27 +841,36 @@
 
   function stockPalletCardMarkup(pallet, plannerCandidate = null, recommendationIndex = 0, requestedIds = new Set()) {
     const units = pallet.items.reduce((sum, item) => sum + item.quantity, 0);
-    const previewLimit = plannerCandidate ? 5 : 3;
+    const expanded = expandedStockPalletIds.has(pallet.id);
+    const menuOpen = openStockPalletMenuId === pallet.id;
     const sortedItems = plannerCandidate
       ? [...pallet.items].sort((a, b) => Number(requestedIds.has(b.partId)) - Number(requestedIds.has(a.partId)))
       : pallet.items;
-    const preview = sortedItems.slice(0, previewLimit).map(item => {
+    const partRows = sortedItems.map(item => {
       const part = state.parts.find(candidate => candidate.id === item.partId);
       const match = plannerCandidate && requestedIds.has(item.partId);
-      return `<div class="stock-card-part ${match ? 'requested-part-match' : ''}"><div>${partIdentityMarkup(part)}${match ? `<small class="needed-match-label">${esc(t('stock.planner.neededPart'))}</small>` : ''}</div><strong>×${item.quantity}</strong></div>`;
+      return `<div class="stock-card-part ${match ? 'requested-part-match' : ''}">
+        <div>${partIdentityMarkup(part)}${match ? `<small class="needed-match-label">${esc(t('stock.planner.neededPart'))}</small>` : ''}</div>
+        <label class="stock-card-quantity"><span>${esc(t('stock.onPallet'))}</span><input aria-label="${esc(t('stock.quantityAria', { part: part?.code || t('common.part') }))}" data-item-id="${esc(item.id)}" data-pallet-id="${esc(pallet.id)}" data-stock-action="edit-quantity" inputmode="numeric" min="1" step="1" type="number" value="${item.quantity}"/></label>
+        <button aria-label="${esc(t('stock.removePartAria'))}" class="remove-item" data-item-id="${esc(item.id)}" data-pallet-id="${esc(pallet.id)}" data-stock-action="remove-item" type="button">×</button>
+      </div>`;
     }).join('');
     const overflowItems = pallet.items.map(item => ({ item, part: state.parts.find(part => part.id === item.partId) })).filter(entry => entry.part?.overflowing);
-    const recommendation = plannerCandidate ? `<div class="recommendation-label">${esc(t(recommendationIndex ? 'stock.planner.additional' : 'stock.planner.primary'))}</div>
+    const recommendationLabel = plannerCandidate ? `<div class="recommendation-label">${esc(t(recommendationIndex ? 'stock.planner.additional' : 'stock.planner.primary'))}</div>` : '';
+    const recommendationDetails = plannerCandidate ? `
       <div class="planner-card-coverage">${esc(t('stock.planner.covers', { parts: [...plannerCandidate.coveredPartIds].map(id => state.parts.find(part => part.id === id)?.code).filter(Boolean).join(', ') }))}</div>
       ${plannerCandidate.unrelatedLines ? `<div class="planner-card-extra">${esc(t('stock.planner.otherLines', { count: plannerCandidate.unrelatedLines, units: plannerCandidate.unrelatedUnits }))}</div>` : ''}
       ${plannerCandidate.overflowUnits ? `<div class="planner-overflow-warning" role="status"><strong>${esc(t('stock.planner.overflowWarning'))}</strong><span>${esc(t('stock.planner.overflowContents', { parts: plannerCandidate.overflowItems.map(entry => `${entry.part.code} ×${entry.quantity}`).join(', ') }))}</span></div>` : ''}` : '';
-    return `<article class="stock-pallet-card ${plannerCandidate ? 'recommended-pallet' : ''} ${plannerCandidate?.overflowUnits ? 'overflow-risk' : ''}">
-      ${recommendation}
-      <div class="stock-pallet-card-head"><div><span class="delivery-label">${esc(t('common.delivery'))} ${esc(pallet.deliveryNumber)}</span><h3>${esc(t('common.pallet'))} ${esc(pallet.palletNumber)}</h3></div><span class="pallet-unit-count">${units}</span></div>
-      <div class="stock-pallet-meta"><span>${esc(t('common.partLines', { count: pallet.items.length }))}</span><span>${esc(t('common.units', { count: units }))}</span>${overflowItems.length ? `<span class="overflow-text">${esc(t('stock.overflowingCount', { count: overflowItems.length }))}</span>` : ''}</div>
-      <div class="stock-card-parts">${preview || `<span class="muted">${esc(t('stock.noPartsYet'))}</span>`}${pallet.items.length > previewLimit ? `<small>${esc(t('common.more', { count: pallet.items.length - previewLimit }))}</small>` : ''}</div>
+    const expandedContent = expanded ? `<div class="stock-card-expanded">
+      ${recommendationDetails}
+      <div class="stock-card-parts">${partRows || `<span class="muted">${esc(t('stock.noPartsYet'))}</span>`}</div>
       ${pallet.notes ? `<p class="stock-pallet-note">${esc(pallet.notes)}</p>` : ''}
-      <button class="secondary stock-pallet-open" data-pallet-id="${esc(pallet.id)}" type="button">${esc(t('stock.openPallet'))}</button>
+    </div>` : '';
+    return `<article aria-expanded="${expanded}" aria-label="${esc(t('stock.cardAria', { delivery: pallet.deliveryNumber, pallet: pallet.palletNumber }))}" class="stock-pallet-card ${expanded ? 'expanded' : ''} ${menuOpen ? 'menu-open' : ''} ${plannerCandidate ? 'recommended-pallet' : ''} ${plannerCandidate?.overflowUnits ? 'overflow-risk' : ''}" data-stock-pallet-card="${esc(pallet.id)}" tabindex="0">
+      <div class="stock-pallet-card-head"><div><span class="delivery-label">${esc(t('common.delivery'))} ${esc(pallet.deliveryNumber)}</span><h3>${esc(t('common.pallet'))} ${esc(pallet.palletNumber)}</h3></div><button aria-expanded="${menuOpen}" aria-haspopup="menu" aria-label="${esc(t('stock.moreActionsAria', { delivery: pallet.deliveryNumber, pallet: pallet.palletNumber }))}" class="stock-pallet-menu-toggle" data-pallet-id="${esc(pallet.id)}" data-stock-action="menu" type="button">⋯</button><div class="stock-pallet-card-menu ${menuOpen ? 'open' : ''}" role="menu"><button data-pallet-id="${esc(pallet.id)}" data-stock-action="add-part" role="menuitem" type="button">${esc(t('stock.addParts'))}</button><button data-pallet-id="${esc(pallet.id)}" data-stock-action="edit-details" role="menuitem" type="button">${esc(t('stock.editDetails'))}</button><button class="danger-option" data-pallet-id="${esc(pallet.id)}" data-stock-action="delete" role="menuitem" type="button">${esc(t('common.delete'))}</button></div></div>
+      ${recommendationLabel}
+      <div class="stock-pallet-meta"><span>${esc(t('common.partLines', { count: pallet.items.length }))}</span><span>${esc(t('common.units', { count: units }))}</span>${overflowItems.length ? `<span class="overflow-text">${esc(t('stock.overflowingCount', { count: overflowItems.length }))}</span>` : ''}</div>
+      ${expandedContent}
     </article>`;
   }
 
@@ -879,6 +890,7 @@
     els.stockSearchInfo.textContent = stockPlannerFeedback ? t(stockPlannerFeedback.key, stockPlannerFeedback.params) : (selectedParts.length ? t('stock.planner.selectedCount', { count: selectedParts.length }) : '');
 
     if (!selectedParts.length) {
+      if (openStockPalletMenuId && !pallets.some(pallet => pallet.id === openStockPalletMenuId)) openStockPalletMenuId = null;
       els.stockPlannerResults.classList.add('hidden');
       els.stockPlannerResults.innerHTML = '';
       els.stockPalletGrid.innerHTML = pallets.length ? pallets.map(pallet => stockPalletCardMarkup(pallet)).join('') : `<div class="empty-state panel stock-empty"><strong>${esc(t('stock.none'))}</strong><span>${esc(t('stock.noneHint'))}</span></div>`;
@@ -894,6 +906,7 @@
       <div class="planner-result-metrics"><span class="${result.overflowUnits ? 'risk' : 'safe'}">${esc(result.overflowUnits ? t('stock.planner.overflowUnits', { count: result.overflowUnits }) : t('stock.planner.noOverflow'))}</span><span>${esc(t('stock.planner.unrelatedUnits', { count: result.unrelatedUnits }))}</span><span>${esc(t('stock.planner.optimized'))}</span></div>
       ${unavailableParts.length ? `<div class="planner-unavailable"><strong>${esc(t('stock.planner.unavailableTitle'))}</strong><span>${esc(t('stock.planner.unavailable', { parts: unavailableParts.map(part => part.code).join(', ') }))}</span></div>` : ''}`;
 
+    if (openStockPalletMenuId && !result.pallets.some(candidate => candidate.pallet.id === openStockPalletMenuId)) openStockPalletMenuId = null;
     els.stockPalletGrid.innerHTML = result.pallets.length
       ? result.pallets.map((candidate, index) => stockPalletCardMarkup(candidate.pallet, candidate, index, requestedIds)).join('')
       : `<div class="empty-state panel stock-empty"><strong>${esc(t('stock.planner.noRecommendation'))}</strong><span>${esc(t('stock.planner.noRecommendationHint'))}</span></div>`;
@@ -1279,14 +1292,15 @@
     showToast(t(part.overflowing ? 'message.overflowing' : 'message.spaceAvailable'));
   }
 
-  function updateStockPalletItemQuantity(itemId, requestedQuantity) {
-    const pallet = getStockPallet(openStockPalletId);
+  function updateStockPalletItemQuantity(itemId, requestedQuantity, palletId = openStockPalletId) {
+    const pallet = getStockPallet(palletId);
     const item = pallet?.items.find(candidate => candidate.id === itemId);
     if (!item) return;
     const numericQuantity = Number(requestedQuantity);
     if (!Number.isFinite(numericQuantity) || numericQuantity < 1) {
       showToast(t('message.storedMinimum'));
-      renderStockPalletDetail();
+      renderStock();
+      if (els.stockPalletDetailDialog.hasAttribute('open') && openStockPalletId === pallet.id) renderStockPalletDetail();
       return;
     }
     const nextQuantity = Math.floor(numericQuantity);
@@ -1296,12 +1310,12 @@
     const part = state.parts.find(candidate => candidate.id === item.partId);
     addActivity('activity.stockPalletQuantityChanged', `${part?.code || t('common.part')}: ${previousQuantity} → ${nextQuantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     renderAll();
-    renderStockPalletDetail();
+    if (els.stockPalletDetailDialog.hasAttribute('open') && openStockPalletId === pallet.id) renderStockPalletDetail();
     showToast(t('message.storedUpdated'));
   }
 
-  function removeStockPalletItem(itemId) {
-    const pallet = getStockPallet(openStockPalletId);
+  function removeStockPalletItem(itemId, palletId = openStockPalletId) {
+    const pallet = getStockPallet(palletId);
     const item = pallet?.items.find(candidate => candidate.id === itemId);
     if (!item) return;
     const part = state.parts.find(candidate => candidate.id === item.partId);
@@ -1309,7 +1323,7 @@
     pallet.items = pallet.items.filter(candidate => candidate.id !== itemId);
     addActivity('activity.stockPalletPartRemoved', `${part?.code || t('common.part')} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     renderAll();
-    renderStockPalletDetail();
+    if (els.stockPalletDetailDialog.hasAttribute('open') && openStockPalletId === pallet.id) renderStockPalletDetail();
     showToast(t('message.storedPartRemoved'));
   }
 
@@ -1319,6 +1333,8 @@
     if (!window.confirm(t('message.deletePalletConfirm', { delivery: pallet.deliveryNumber, pallet: pallet.palletNumber }))) return;
     state.stockPallets = state.stockPallets.filter(candidate => candidate.id !== palletId);
     addActivity('activity.stockPalletDeleted', `${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+    expandedStockPalletIds.delete(palletId);
+    if (openStockPalletMenuId === palletId) openStockPalletMenuId = null;
     openStockPalletId = null;
     closeDialog(els.stockPalletDetailDialog);
     renderAll();
@@ -1405,6 +1421,14 @@
     if (window.innerWidth <= 820 && els.sidebar.classList.contains('open') && !els.sidebar.contains(event.target) && event.target !== els.menuBtn) els.sidebar.classList.remove('open');
     const dismissButton = event.target.closest('[data-dismiss-notice]');
     if (dismissButton) dismissNotice(dismissButton.dataset.dismissNotice, dismissButton.dataset.signature || '');
+    if (openInventoryMenuPartId && !event.target.closest('.inventory-menu-toggle, .inventory-card-menu')) {
+      openInventoryMenuPartId = null;
+      renderInventory();
+    }
+    if (openStockPalletMenuId && !event.target.closest('.stock-pallet-menu-toggle, .stock-pallet-card-menu')) {
+      openStockPalletMenuId = null;
+      renderStock();
+    }
   });
   $$('.nav-item').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
   $$('[data-jump]').forEach(button => button.addEventListener('click', () => switchView(button.dataset.jump)));
@@ -1650,10 +1674,10 @@
       state.stockPallets.push(pallet);
       addActivity('activity.stockPalletCreated', `${deliveryNumber} / ${palletNumber}`);
     }
-    openStockPalletId = pallet.id;
+    expandedStockPalletIds.add(pallet.id);
+    openStockPalletId = null;
     closeDialog(els.stockPalletDialog);
     renderAll();
-    openStockPalletDetail(pallet.id);
     showToast(t(id ? 'message.palletUpdated' : 'message.palletCreated'));
   });
 
@@ -1668,10 +1692,10 @@
     if (pallet.items.some(item => item.partId === part.id)) return showToast(t('message.palletPartDuplicate'));
     pallet.items.push({ id: uid('stock_item'), partId: part.id, quantity });
     addActivity('activity.partAddedStockPallet', `${part.code} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
-    openStockPalletId = pallet.id;
+    expandedStockPalletIds.add(pallet.id);
+    openStockPalletId = null;
     closeDialog(els.stockItemDialog);
     renderAll();
-    openStockPalletDetail(pallet.id);
     showToast(t(part.overflowing ? 'message.partAddedOverflowing' : 'message.partAddedPallet'));
   });
 
@@ -1709,9 +1733,60 @@
     stockPlannerFeedback = null;
     renderStock();
   });
+  function handleStockPalletAction(event) {
+    const control = event.target.closest('[data-stock-action]');
+    if (!control) return false;
+    const palletId = control.dataset.palletId;
+    if (control.dataset.stockAction === 'menu') {
+      openStockPalletMenuId = openStockPalletMenuId === palletId ? null : palletId;
+      renderStock();
+    }
+    if (control.dataset.stockAction === 'add-part') {
+      openStockPalletMenuId = null;
+      openStockPalletId = null;
+      renderStock();
+      openStockItemDialog(palletId);
+    }
+    if (control.dataset.stockAction === 'edit-details') {
+      const pallet = getStockPallet(palletId);
+      openStockPalletMenuId = null;
+      openStockPalletId = null;
+      renderStock();
+      if (pallet) openStockPalletDialog(pallet);
+    }
+    if (control.dataset.stockAction === 'delete') {
+      openStockPalletMenuId = null;
+      renderStock();
+      deleteStockPallet(palletId);
+    }
+    if (control.dataset.stockAction === 'remove-item') removeStockPalletItem(control.dataset.itemId, palletId);
+    return true;
+  }
   els.stockPalletGrid.addEventListener('click', event => {
-    const button = event.target.closest('.stock-pallet-open');
-    if (button) openStockPalletDetail(button.dataset.palletId);
+    if (handleStockPalletAction(event)) return;
+    if (event.target.closest('input, label, .stock-pallet-card-menu')) return;
+    const card = event.target.closest('[data-stock-pallet-card]');
+    if (!card) return;
+    if (openStockPalletMenuId) {
+      openStockPalletMenuId = null;
+      renderStock();
+      return;
+    }
+    if (expandedStockPalletIds.has(card.dataset.stockPalletCard)) expandedStockPalletIds.delete(card.dataset.stockPalletCard);
+    else expandedStockPalletIds.add(card.dataset.stockPalletCard);
+    renderStock();
+  });
+  els.stockPalletGrid.addEventListener('change', event => {
+    const input = event.target.closest('input[data-stock-action="edit-quantity"]');
+    if (input) updateStockPalletItemQuantity(input.dataset.itemId, input.value, input.dataset.palletId);
+  });
+  els.stockPalletGrid.addEventListener('keydown', event => {
+    if (!['Enter', ' '].includes(event.key) || event.target !== event.target.closest('[data-stock-pallet-card]')) return;
+    event.preventDefault();
+    const palletId = event.target.dataset.stockPalletCard;
+    if (expandedStockPalletIds.has(palletId)) expandedStockPalletIds.delete(palletId);
+    else expandedStockPalletIds.add(palletId);
+    renderStock();
   });
 
   els.addStockPalletItemBtn.addEventListener('click', () => {
@@ -1769,10 +1844,13 @@
     if (button.dataset.action === 'plus') adjustPartQuantity(button.dataset.id, 1);
     if (button.dataset.action === 'edit') {
       openInventoryMenuPartId = null;
-      openPartDialog(state.parts.find(part => part.id === button.dataset.id));
+      const part = state.parts.find(candidate => candidate.id === button.dataset.id);
+      renderInventory();
+      openPartDialog(part);
     }
     if (button.dataset.action === 'delete') {
       openInventoryMenuPartId = null;
+      renderInventory();
       deletePart(button.dataset.id);
     }
     return true;

@@ -7,7 +7,7 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - A master inventory where every physical part has one shared quantity.
 - Clean expandable inventory cards: code, name, assembly, quantity and overflowing switch remain visible, while category, dimensions, store quantity, notes and project links open on a single tap.
 - Part-code colours replace text status badges: green for in stock, yellow for low stock and red for out of stock; Edit and Delete live in each card's three-dot menu.
-- Category filtering and a floating add-part control keep the Inventory toolbar compact.
+- Full-width Inventory cards expand downward without changing width; category filtering and a fixed floating add-part control keep the toolbar compact.
 - Link the same part to multiple projects without duplicating stock.
 - Shared quantity updates across **All parts** and every linked project.
 - Part code, name, category, separate length/width/height measurements, assembly position such as `2/5`, notes and quantity.
@@ -15,6 +15,8 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - Dismissible master-inventory warnings and information banners.
 - Mark parts as overflowing when no additional storage space is available.
 - A separate Stock area for undelivered store pallets, identified by delivery and pallet number.
+- Compact two-column pallet cards expand downward on one tap. Their three-dot menus add parts, edit pallet details or delete, while stored quantities remain editable inside the expanded card.
+- A fixed floating add-pallet control replaces the old Stock toolbar button.
 - Persistent interface languages: English, Ukrainian, Russian and Polish.
 - Tabbed Settings separate preferences, data management and concise explanations of StoreFlow's shared-stock, checklist, pallet-planning and iPhone-storage rules.
 - Search for several required parts at once and receive an optimized pallet set that avoids overflowing stock first, consolidates required parts onto fewer pallets, and minimizes unrelated stock.

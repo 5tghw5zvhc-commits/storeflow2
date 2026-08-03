@@ -114,19 +114,15 @@
 <div class="order-grid" id="orderBoards"></div>
 </section>
 <section class="view" id="stockView">
-<div class="section-toolbar stock-toolbar">
-<div><p class="muted" data-i18n="stock.info">Track undelivered pallets currently held at the store. These quantities remain separate from received master inventory.</p></div>
-<button class="primary" data-i18n="stock.newPallet" id="newStockPalletBtn">+ New pallet</button>
-</div>
 <div class="order-summary stock-summary" id="stockSummary"></div>
-<section class="stock-planner" aria-labelledby="stockPlannerTitle">
-<div class="stock-planner-heading"><div><p class="eyebrow" data-i18n="stock.planner.eyebrow">PALLET PLANNER</p><h3 data-i18n="stock.planner.title" id="stockPlannerTitle">Find the best pallets</h3></div><button class="secondary stock-planner-clear hidden" data-i18n="stock.planner.clear" id="clearStockSearch" type="button">Clear</button></div>
-<p class="muted stock-planner-help" data-i18n="stock.planner.help">Add every part you need. StoreFlow will avoid overflowing stock first, then use the fewest pallets and minimize unrelated parts.</p>
+<section aria-label="Pallet planner" class="stock-planner" data-i18n-aria="stock.planner.aria">
+<div class="stock-planner-heading"><p class="eyebrow" data-i18n="stock.planner.eyebrow">PALLET PLANNER</p><button class="secondary stock-planner-clear hidden" data-i18n="stock.planner.clear" id="clearStockSearch" type="button">Clear</button></div>
 <div class="stock-search-row"><div class="stock-search-controls"><input autocomplete="off" data-i18n-placeholder="stock.planner.searchPlaceholder" id="stockSearch" list="stockPlannerOptions" placeholder="Type a part code or name; separate several with commas" type="search"/><datalist id="stockPlannerOptions"></datalist><button class="primary" data-i18n="stock.planner.add" id="addStockSearchPart" type="button">Add part</button></div><span aria-live="polite" class="stock-search-info" id="stockSearchInfo"></span></div>
 <div aria-live="polite" class="stock-selected-parts" id="stockSelectedParts"></div>
 <div class="stock-planner-results hidden" id="stockPlannerResults"></div>
 </section>
 <div class="stock-pallet-grid" id="stockPalletGrid"></div>
+<button aria-label="Add stored pallet" class="inventory-fab stock-fab" data-i18n-aria="stock.addPalletAria" id="newStockPalletBtn" type="button"><span aria-hidden="true">+</span></button>
 </section>
 <section class="view" id="settingsView">
 <div aria-label="Settings sections" class="settings-tabs" data-i18n-aria="settings.tabsAria" role="tablist">
@@ -145,7 +141,7 @@
 </div>
 </div>
 <div class="settings-panel hidden" data-settings-panel="tips" id="settingsTipsPanel" role="tabpanel">
-<div class="tips-heading"><p class="eyebrow" data-i18n="settings.tipsEyebrow">STOREFLOW LOGIC</p><h3 data-i18n="settings.tipsTitle">How StoreFlow keeps records consistent</h3><p class="muted" data-i18n="settings.tipsIntro">These rules explain the less obvious connections between projects, stock, pallets and backups.</p></div>
+<div class="tips-heading"><p class="eyebrow" data-i18n="settings.tipsEyebrow">STOREFLOW LOGIC</p></div>
 <div class="tips-grid">
 <article class="tip-card"><svg class="tip-icon"><use href="#icon-projects"/></svg><div><h3 data-i18n="settings.sharedTitle">One part, one quantity</h3><p data-i18n="settings.sharedHelp">A part can be assigned to multiple projects. Changing its quantity in any view changes the same master record everywhere.</p></div></article>
 <article class="tip-card"><svg class="tip-icon"><use href="#icon-stock"/></svg><div><h3 data-i18n="settings.tip.storeTitle">Received stock and store pallets stay separate</h3><p data-i18n="settings.tip.storeBody">A quantity on a stored pallet appears as “At store” but does not automatically increase received inventory. This prevents undelivered parts being counted as available.</p></div></article>
