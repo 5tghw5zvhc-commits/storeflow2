@@ -1,8 +1,10 @@
 import { access, readFile } from 'node:fs/promises';
+import vm from 'node:vm';
 
 const requiredFiles = [
   'index.html',
   'src/styles.css',
+  'src/i18n.js',
   'src/app.js',
   'manifest.webmanifest',
   'sw.js',
@@ -18,6 +20,7 @@ for (const file of requiredFiles) {
 const html = await readFile('index.html', 'utf8');
 const expectedReferences = [
   'src/styles.css',
+  'src/i18n.js',
   'src/app.js',
   'manifest.webmanifest',
   'assets/icons/icon-180.png'
@@ -34,7 +37,7 @@ for (const fragment of forbiddenHtml) {
   if (html.includes(fragment)) throw new Error(`index.html still contains removed interface: ${fragment}`);
 }
 
-const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"'];
+const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
 for (const fragment of requiredHtml) {
   if (!html.includes(fragment)) throw new Error(`index.html is missing requested interface: ${fragment}`);
 }
@@ -67,6 +70,48 @@ if (!app.includes('dismissNotice') || !app.includes('stockAlertSignature') || !a
 if (!app.includes('togglePartOverflowing') || !app.includes("data.get('overflowing')")) {
   throw new Error('Overflowing master-part support is missing.');
 }
+if (!app.includes('language: LANGUAGE_CODES.has(source.language)') || !app.includes('applyTranslations') || !app.includes('languageSelect.addEventListener')) {
+  throw new Error('Persistent interface language support is missing.');
+}
+if (/showToast\(\s*['"`]/.test(app) || /window\.confirm\(\s*['"`]/.test(app)) {
+  throw new Error('Toast and confirmation text must come from the translation catalogue.');
+}
+
+const i18nSource = await readFile('src/i18n.js', 'utf8');
+if (/\.\.\.en\b/.test(i18nSource)) {
+  throw new Error('Translated catalogues must list every key explicitly; English spreading would hide missing translations.');
+}
+const sandbox = {};
+vm.runInNewContext(i18nSource, sandbox, { filename: 'src/i18n.js' });
+const i18n = sandbox.StoreFlowI18n;
+if (!i18n || typeof i18n.t !== 'function') throw new Error('src/i18n.js did not expose StoreFlowI18n.');
+const expectedLanguages = ['en', 'uk', 'ru', 'pl'];
+if (JSON.stringify(i18n.languages.map(language => language.code)) !== JSON.stringify(expectedLanguages)) {
+  throw new Error('StoreFlow must offer English, Ukrainian, Russian and Polish in that order.');
+}
+const englishKeys = Object.keys(i18n.translations.en).sort();
+const placeholderNames = value => [...String(value).matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map(match => match[1]).sort();
+for (const language of expectedLanguages.slice(1)) {
+  const catalogue = i18n.translations[language];
+  const keys = Object.keys(catalogue || {}).sort();
+  if (JSON.stringify(keys) !== JSON.stringify(englishKeys)) {
+    const missing = englishKeys.filter(key => !keys.includes(key));
+    const extra = keys.filter(key => !englishKeys.includes(key));
+    throw new Error(`${language} translation keys differ from English. Missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'}.`);
+  }
+  for (const key of englishKeys) {
+    if (!String(catalogue[key]).trim()) throw new Error(`${language} translation is empty for: ${key}`);
+    if (JSON.stringify(placeholderNames(catalogue[key])) !== JSON.stringify(placeholderNames(i18n.translations.en[key]))) {
+      throw new Error(`${language} translation placeholders differ for: ${key}`);
+    }
+  }
+}
+
+const referencedKeys = new Set();
+for (const match of html.matchAll(/data-i18n(?:-placeholder|-aria)?="([^"]+)"/g)) referencedKeys.add(match[1]);
+for (const match of app.matchAll(/\bt\(\s*['"]([^'"]+)['"]/g)) referencedKeys.add(match[1]);
+const missingReferences = [...referencedKeys].filter(key => !Object.hasOwn(i18n.translations.en, key));
+if (missingReferences.length) throw new Error(`Translation keys are referenced but undefined: ${missingReferences.join(', ')}`);
 
 const manifest = JSON.parse(await readFile('manifest.webmanifest', 'utf8'));
 if (manifest.start_url !== './' || manifest.scope !== './') {

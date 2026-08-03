@@ -2,6 +2,8 @@
   'use strict';
 
   const STORAGE_KEY = 'storeflow-state-v1';
+  const I18N = window.StoreFlowI18n;
+  const LANGUAGE_CODES = new Set(I18N.languages.map(language => language.code));
   const CATEGORIES = ['Desk', 'Bed', 'Wardrobe', 'Kitchen'];
   let storageAvailable = true;
   let currentView = 'dashboard';
@@ -64,7 +66,8 @@
   function createInitialState() {
     const now = new Date().toISOString();
     return {
-      version: 5,
+      version: 6,
+      language: 'en',
       activeProjectId: null,
       selectedOrderId: null,
       projects: [],
@@ -73,7 +76,7 @@
       stockPallets: [],
       dismissedNotices: {},
       activity: [
-        { id: uid('activity'), text: 'StoreFlow workspace ready', detail: 'Create a project or add your first master part to begin.', createdAt: now }
+        { id: uid('activity'), textKey: 'activity.workspaceReady', detailKey: 'activity.workspaceReadyHelp', createdAt: now }
       ]
     };
   }
@@ -118,9 +121,9 @@
   function dimensionLabel(part) {
     const dimensions = dimensionsFromPart(part);
     const values = [
-      dimensions.length ? `L ${dimensions.length}` : '',
-      dimensions.width ? `W ${dimensions.width}` : '',
-      dimensions.height ? `H ${dimensions.height}` : ''
+      dimensions.length ? `${t('dimensions.lengthShort')} ${dimensions.length}` : '',
+      dimensions.width ? `${t('dimensions.widthShort')} ${dimensions.width}` : '',
+      dimensions.height ? `${t('dimensions.heightShort')} ${dimensions.height}` : ''
     ].filter(Boolean);
     return values.length ? `${values.join(' × ')} mm` : String(part?.size || '—');
   }
@@ -226,7 +229,8 @@
       .filter(pallet => pallet.deliveryNumber && pallet.palletNumber);
 
     return {
-      version: 5,
+      version: 6,
+      language: LANGUAGE_CODES.has(source.language) ? source.language : 'en',
       activeProjectId: validProjectIds.has(source.activeProjectId) ? source.activeProjectId : (projects[0]?.id || null),
       selectedOrderId: source.selectedOrderId || null,
       projects,
@@ -256,6 +260,23 @@
 
   let state = loadState();
 
+  function t(key, params = {}) {
+    return I18N.t(state.language, key, params);
+  }
+
+  function categoryLabel(category) {
+    return t(`category.${category}`);
+  }
+
+  function applyTranslations() {
+    document.documentElement.lang = state.language;
+    document.title = t('meta.title');
+    $$('[data-i18n]').forEach(element => { element.textContent = t(element.dataset.i18n); });
+    $$('[data-i18n-placeholder]').forEach(element => { element.placeholder = t(element.dataset.i18nPlaceholder); });
+    $$('[data-i18n-aria]').forEach(element => { element.setAttribute('aria-label', t(element.dataset.i18nAria)); });
+    if (els.languageSelect) els.languageSelect.value = state.language;
+  }
+
   const els = {
     sidebar: $('.sidebar'), menuBtn: $('#menuBtn'), pageTitle: $('#pageTitle'), pageEyebrow: $('#pageEyebrow'),
     alertBar: $('#alertBar'), storageNotice: $('#storageNotice'), inventoryNote: $('#inventoryNote'),
@@ -266,7 +287,7 @@
     addPartBtn: $('#addPartBtn'), inventoryTableBody: $('#inventoryTableBody'), inventoryEmpty: $('#inventoryEmpty'), inventoryCards: $('#inventoryCards'),
     orderSelect: $('#orderSelect'), newOrderBtn: $('#newOrderBtn'), deleteOrderBtn: $('#deleteOrderBtn'), orderSummary: $('#orderSummary'), orderBoards: $('#orderBoards'),
     newStockPalletBtn: $('#newStockPalletBtn'), stockSummary: $('#stockSummary'), stockSearch: $('#stockSearch'), stockSearchInfo: $('#stockSearchInfo'), stockPalletGrid: $('#stockPalletGrid'),
-    exportBtn: $('#exportBtn'), importInput: $('#importInput'), resetBtn: $('#resetBtn'),
+    languageSelect: $('#languageSelect'), exportBtn: $('#exportBtn'), importInput: $('#importInput'), resetBtn: $('#resetBtn'),
     projectDialog: $('#projectDialog'), projectForm: $('#projectForm'), projectDialogTitle: $('#projectDialogTitle'), projectPhotoInput: $('#projectPhotoInput'),
     projectPhotoPreview: $('#projectPhotoPreview'), removeProjectPhotoBtn: $('#removeProjectPhotoBtn'),
     projectPartsDialog: $('#projectPartsDialog'), projectPartsForm: $('#projectPartsForm'), projectPartsTitle: $('#projectPartsTitle'), projectPartsSearch: $('#projectPartsSearch'), projectPartsList: $('#projectPartsList'),
@@ -279,8 +300,8 @@
   };
 
   const viewMeta = {
-    dashboard: ['Dashboard', 'OVERVIEW'], projects: ['Projects', 'WORKSPACES'], inventory: ['Inventory', 'MASTER STOCK'],
-    orders: ['Assembly orders', 'PALLET BUILDING'], stock: ['Stock', 'AT THE STORE'], settings: ['Data & settings', 'WORKSPACE']
+    dashboard: ['view.dashboard.title', 'view.dashboard.eyebrow'], projects: ['view.projects.title', 'view.projects.eyebrow'], inventory: ['view.inventory.title', 'view.inventory.eyebrow'],
+    orders: ['view.orders.title', 'view.orders.eyebrow'], stock: ['view.stock.title', 'view.stock.eyebrow'], settings: ['view.settings.title', 'view.settings.eyebrow']
   };
 
   function saveState() {
@@ -299,7 +320,8 @@
 
   function formatDate(iso) {
     try {
-      return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+      const locale = I18N.languages.find(language => language.code === state.language)?.locale || 'en-GB';
+      return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
     } catch (error) {
       return '';
     }
@@ -310,7 +332,7 @@
   }
 
   function getProjectName(id) {
-    return state.projects.find(project => project.id === id)?.name || 'Unknown project';
+    return state.projects.find(project => project.id === id)?.name || t('common.unknownProject');
   }
 
   function partInProject(part, projectId) {
@@ -322,7 +344,7 @@
   }
 
   function getProjectNames(part) {
-    return (part.projectIds || []).map(getProjectName).filter(name => name !== 'Unknown project');
+    return (part.projectIds || []).map(getProjectName).filter(name => name !== t('common.unknownProject'));
   }
 
   function getActiveOrders() {
@@ -340,9 +362,9 @@
   }
 
   function stockStatus(quantity) {
-    if (quantity <= 0) return { key: 'out', label: 'Out of stock' };
-    if (quantity <= 4) return { key: 'low', label: 'Low stock' };
-    return { key: 'healthy', label: 'In stock' };
+    if (quantity <= 0) return { key: 'out', label: t('status.out') };
+    if (quantity <= 4) return { key: 'low', label: t('status.low') };
+    return { key: 'healthy', label: t('status.healthy') };
   }
 
   function getStockPallet(id) {
@@ -354,7 +376,7 @@
   }
 
   function partIdentityMarkup(part) {
-    if (!part) return '<strong class="part-name">Deleted master part</strong>';
+    if (!part) return `<strong class="part-name">${esc(t('inventory.deletedPart'))}</strong>`;
     return `<span class="part-code part-code-badge">${esc(part.code)}</span><strong class="part-name">${esc(part.name)}</strong>`;
   }
 
@@ -373,9 +395,9 @@
     currentView = view;
     $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === view));
     $$('.view').forEach(section => section.classList.toggle('active-view', section.id === `${view}View`));
-    const [title, eyebrow] = viewMeta[view] || viewMeta.dashboard;
-    els.pageTitle.textContent = title;
-    els.pageEyebrow.textContent = eyebrow;
+    const [titleKey, eyebrowKey] = viewMeta[view] || viewMeta.dashboard;
+    els.pageTitle.textContent = t(titleKey);
+    els.pageEyebrow.textContent = t(eyebrowKey);
     els.sidebar.classList.remove('open');
     if (view === 'inventory') renderInventory();
     if (view === 'orders') renderOrders();
@@ -390,6 +412,7 @@
 
   function renderAll() {
     ensureValidSelections();
+    applyTranslations();
     renderProjectSelectors();
     renderDashboard();
     renderProjects();
@@ -404,10 +427,10 @@
   function renderProjectSelectors() {
     const projectOptions = state.projects.length
       ? state.projects.map(project => `<option value="${esc(project.id)}">${esc(project.name)}</option>`).join('')
-      : '<option value="">No projects yet</option>';
+      : `<option value="">${esc(t('projects.none'))}</option>`;
 
     const previousFilter = els.inventoryProjectFilter.value || 'all';
-    els.inventoryProjectFilter.innerHTML = `<option value="all">All master parts</option><option value="unassigned">Not in a project</option>${projectOptions}`;
+    els.inventoryProjectFilter.innerHTML = `<option value="all">${esc(t('inventory.allParts'))}</option><option value="unassigned">${esc(t('inventory.notInProject'))}</option>${projectOptions}`;
     els.inventoryProjectFilter.value = [...els.inventoryProjectFilter.options].some(option => option.value === previousFilter) ? previousFilter : 'all';
 
     els.addPartBtn.disabled = false;
@@ -428,9 +451,9 @@
       return;
     }
     const messages = [];
-    if (out) messages.push(`${out} out of stock`);
-    if (low) messages.push(`${low} low stock`);
-    els.alertBar.innerHTML = `<span>⚠ Master inventory: ${messages.join(' and ')}. Tap a stock card below to review the complete list.</span><button type="button" class="notice-close" data-dismiss-notice="stock-alert" data-signature="${signature}" aria-label="Close master inventory warning">×</button>`;
+    if (out) messages.push(t('alert.out', { count: out }));
+    if (low) messages.push(t('alert.low', { count: low }));
+    els.alertBar.innerHTML = `<span>${esc(t('alert.message', { counts: messages.join(t('alert.join')) }))}</span><button type="button" class="notice-close" data-dismiss-notice="stock-alert" data-signature="${signature}" aria-label="${esc(t('alert.closeAria'))}">×</button>`;
     els.alertBar.classList.remove('hidden');
   }
 
@@ -454,24 +477,24 @@
     els.statParts.textContent = state.parts.length;
     els.statLow.textContent = lowParts.length;
     els.statOut.textContent = outParts.length;
-    els.dashboardProjectName.textContent = getActiveProject()?.name || 'Create your first project';
+    els.dashboardProjectName.textContent = getActiveProject()?.name || t('dashboard.createFirstProject');
 
     const order = getSelectedOrder();
     els.categoryProgress.innerHTML = CATEGORIES.map(category => {
       const items = order?.items.filter(item => item.category === category) || [];
       const packed = items.filter(item => item.packed).length;
       const percentage = items.length ? Math.round((packed / items.length) * 100) : 0;
-      return `<div class="category-card"><div class="top"><strong>${category}</strong><span>${packed}/${items.length}</span></div><div class="progress-track"><div class="progress-fill" style="width:${percentage}%"></div></div></div>`;
+      return `<div class="category-card"><div class="top"><strong>${esc(categoryLabel(category))}</strong><span>${packed}/${items.length}</span></div><div class="progress-track"><div class="progress-fill" style="width:${percentage}%"></div></div></div>`;
     }).join('');
 
     els.activityList.innerHTML = state.activity.length
-      ? state.activity.slice(0, 8).map(activity => `<div class="activity-item"><div><strong>${esc(activity.text)}</strong><span>${esc(activity.detail)}</span></div><span>${formatDate(activity.createdAt)}</span></div>`).join('')
-      : '<div class="empty-state"><strong>No activity yet.</strong><span>Your changes will appear here.</span></div>';
+      ? state.activity.slice(0, 8).map(activity => `<div class="activity-item"><div><strong>${esc(activity.textKey ? t(activity.textKey, activity.textParams) : activity.text)}</strong><span>${esc(activity.detailKey ? t(activity.detailKey, activity.detailParams) : activity.detail)}</span></div><span>${formatDate(activity.createdAt)}</span></div>`).join('')
+      : `<div class="empty-state"><strong>${esc(t('dashboard.noActivity'))}</strong><span>${esc(t('dashboard.activityHint'))}</span></div>`;
   }
 
   function renderProjects() {
     if (!state.projects.length) {
-      els.projectCards.innerHTML = '<div class="empty-state panel"><strong>No projects yet.</strong><span>Create a project, then include parts from the master inventory.</span></div>';
+      els.projectCards.innerHTML = `<div class="empty-state panel"><strong>${esc(t('projects.none'))}</strong><span>${esc(t('projects.noneHint'))}</span></div>`;
       return;
     }
 
@@ -481,18 +504,18 @@
       const orderCount = state.orders.filter(order => order.projectId === project.id).length;
       const isActive = project.id === state.activeProjectId;
       const photo = project.photo
-        ? `<button type="button" class="project-card-photo project-photo-expand" data-id="${esc(project.id)}" aria-label="Expand photo for ${esc(project.name)}"><img src="${esc(project.photo)}" alt="${esc(project.name)}" /><span class="photo-expand-hint">Tap to expand</span></button>`
-        : '<div class="project-card-photo"><div class="project-photo-placeholder"><span>SF</span><small>Add project photo</small></div></div>';
+        ? `<button type="button" class="project-card-photo project-photo-expand" data-id="${esc(project.id)}" aria-label="${esc(t('projects.expandPhotoAria', { name: project.name }))}"><img src="${esc(project.photo)}" alt="${esc(project.name)}" /><span class="photo-expand-hint">${esc(t('projects.tapExpand'))}</span></button>`
+        : `<div class="project-card-photo"><div class="project-photo-placeholder"><span>SF</span><small>${esc(t('projects.addPhoto'))}</small></div></div>`;
       return `<article class="project-card ${isActive ? 'active' : ''}">
         ${photo}
         <div class="project-card-body">
-          <div class="project-card-head"><div><p class="eyebrow">PROJECT</p><h3>${esc(project.name)}</h3></div><button class="icon-button project-delete" data-id="${esc(project.id)}" aria-label="Delete project">×</button></div>
-          <p class="muted">${esc(project.location || 'No location set')}${project.reference ? ` · ${esc(project.reference)}` : ''}</p>
-          <div class="project-meta"><span class="meta-chip">${linkedParts.length} linked parts</span><span class="meta-chip">${totalQty} shared units</span><span class="meta-chip">${orderCount} orders</span></div>
+          <div class="project-card-head"><div><p class="eyebrow">${esc(t('projects.label'))}</p><h3>${esc(project.name)}</h3></div><button class="icon-button project-delete" data-id="${esc(project.id)}" aria-label="${esc(t('projects.deleteAria'))}">×</button></div>
+          <p class="muted">${esc(project.location || t('common.noLocationSet'))}${project.reference ? ` · ${esc(project.reference)}` : ''}</p>
+          <div class="project-meta"><span class="meta-chip">${esc(t('common.linkedParts', { count: linkedParts.length }))}</span><span class="meta-chip">${esc(t('common.sharedUnits', { count: totalQty }))}</span><span class="meta-chip">${esc(t('common.orders', { count: orderCount }))}</span></div>
           <div class="project-actions project-actions-wrap">
-            <button class="${isActive ? 'secondary' : 'primary'} project-open" data-id="${esc(project.id)}">Open project</button>
-            <button class="secondary project-manage-parts" data-id="${esc(project.id)}">Manage parts</button>
-            <button class="secondary project-edit" data-id="${esc(project.id)}">Edit project</button>
+            <button class="${isActive ? 'secondary' : 'primary'} project-open" data-id="${esc(project.id)}">${esc(t('projects.open'))}</button>
+            <button class="secondary project-manage-parts" data-id="${esc(project.id)}">${esc(t('projects.manageParts'))}</button>
+            <button class="secondary project-edit" data-id="${esc(project.id)}">${esc(t('projects.edit'))}</button>
           </div>
         </div>
       </article>`;
@@ -530,7 +553,7 @@
 
   function projectChips(part, limit = 3) {
     const names = getProjectNames(part);
-    if (!names.length) return '<span class="meta-chip muted-chip">Unassigned</span>';
+    if (!names.length) return `<span class="meta-chip muted-chip">${esc(t('common.unassigned'))}</span>`;
     const shown = names.slice(0, limit).map(name => `<span class="meta-chip">${esc(name)}</span>`).join('');
     return `${shown}${names.length > limit ? `<span class="meta-chip">+${names.length - limit}</span>` : ''}`;
   }
@@ -545,12 +568,12 @@
         <td><strong class="part-name table-part-name">${esc(part.name)}</strong>${part.notes ? `<br><small class="muted">${esc(part.notes)}</small>` : ''}</td>
         <td>${esc(dimensionLabel(part))}</td>
         <td><span class="assembly-badge">${esc(assemblyLabel(part))}</span></td>
-        <td>${esc(part.category)}</td>
+        <td>${esc(categoryLabel(part.category))}</td>
         <td><div class="project-chip-row">${projectChips(part, 2)}</div></td>
-        <td><div class="stock-control"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="Reduce shared quantity">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="Increase shared quantity">+</button></div></td>
+        <td><div class="stock-control"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.reduceAria'))}">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.increaseAria'))}">+</button></div></td>
         <td><strong>${storedQuantity}</strong></td>
-        <td><div class="status-stack"><span class="status ${status.key}">${status.label}</span>${part.overflowing ? '<span class="status overflowing">Overflowing</span>' : ''}</div></td>
-        <td><div class="row-actions"><button type="button" class="${part.overflowing ? 'overflow-active' : ''}" data-action="overflow" data-id="${esc(part.id)}">${part.overflowing ? 'Space available' : 'Mark overflowing'}</button><button type="button" data-action="edit" data-id="${esc(part.id)}">Edit</button><button type="button" data-action="delete" data-id="${esc(part.id)}">Delete</button></div></td>
+        <td><div class="status-stack"><span class="status ${status.key}">${esc(status.label)}</span>${part.overflowing ? `<span class="status overflowing">${esc(t('status.overflowing'))}</span>` : ''}</div></td>
+        <td><div class="row-actions"><button type="button" class="${part.overflowing ? 'overflow-active' : ''}" data-action="overflow" data-id="${esc(part.id)}">${esc(t(part.overflowing ? 'inventory.spaceAvailable' : 'inventory.markOverflowing'))}</button><button type="button" data-action="edit" data-id="${esc(part.id)}">${esc(t('common.edit'))}</button><button type="button" data-action="delete" data-id="${esc(part.id)}">${esc(t('common.delete'))}</button></div></td>
       </tr>`;
     }).join('');
     els.inventoryEmpty.classList.toggle('hidden', parts.length > 0);
@@ -559,18 +582,18 @@
       const status = stockStatus(part.quantity);
       const storedQuantity = storedQuantityForPart(part.id);
       return `<article class="inventory-card">
-        <div class="inventory-card-head"><div class="part-identity-stack">${partIdentityMarkup(part)}</div><div class="status-stack"><span class="status ${status.key}">${status.label}</span>${part.overflowing ? '<span class="status overflowing">Overflowing</span>' : ''}</div></div>
-        <div class="inventory-card-meta"><span class="meta-chip">${esc(part.category)}</span><span class="meta-chip">Size: ${esc(dimensionLabel(part))}</span><span class="meta-chip">Assembly: ${esc(assemblyLabel(part))}</span><span class="meta-chip store-chip">${storedQuantity} at store</span>${part.notes ? `<span class="meta-chip">${esc(part.notes)}</span>` : ''}</div>
+        <div class="inventory-card-head"><div class="part-identity-stack">${partIdentityMarkup(part)}</div><div class="status-stack"><span class="status ${status.key}">${esc(status.label)}</span>${part.overflowing ? `<span class="status overflowing">${esc(t('status.overflowing'))}</span>` : ''}</div></div>
+        <div class="inventory-card-meta"><span class="meta-chip">${esc(categoryLabel(part.category))}</span><span class="meta-chip">${esc(t('inventory.sizeLabel', { size: dimensionLabel(part) }))}</span><span class="meta-chip">${esc(t('inventory.assemblyLabel', { assembly: assemblyLabel(part) }))}</span><span class="meta-chip store-chip">${esc(t('inventory.atStoreLabel', { count: storedQuantity }))}</span>${part.notes ? `<span class="meta-chip">${esc(part.notes)}</span>` : ''}</div>
         <div class="project-chip-row card-projects">${projectChips(part, 4)}</div>
-        <div class="shared-stock-label">Shared quantity across every linked project</div>
-        <div class="inventory-card-bottom"><div class="stock-control large"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="Reduce shared quantity">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="Increase shared quantity">+</button></div><div class="row-actions"><button type="button" class="${part.overflowing ? 'overflow-active' : ''}" data-action="overflow" data-id="${esc(part.id)}">${part.overflowing ? 'Space available' : 'Overflowing'}</button><button type="button" data-action="edit" data-id="${esc(part.id)}">Edit</button><button type="button" data-action="delete" data-id="${esc(part.id)}">Delete</button></div></div>
+        <div class="shared-stock-label">${esc(t('inventory.sharedQuantity'))}</div>
+        <div class="inventory-card-bottom"><div class="stock-control large"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.reduceAria'))}">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.increaseAria'))}">+</button></div><div class="row-actions"><button type="button" class="${part.overflowing ? 'overflow-active' : ''}" data-action="overflow" data-id="${esc(part.id)}">${esc(t(part.overflowing ? 'inventory.spaceAvailable' : 'status.overflowing'))}</button><button type="button" data-action="edit" data-id="${esc(part.id)}">${esc(t('common.edit'))}</button><button type="button" data-action="delete" data-id="${esc(part.id)}">${esc(t('common.delete'))}</button></div></div>
       </article>`;
-    }).join('') : '<div class="empty-state"><strong>No parts match these filters.</strong><span>Add a master part or change the filters.</span></div>';
+    }).join('') : `<div class="empty-state"><strong>${esc(t('inventory.noneMatch'))}</strong><span>${esc(t('inventory.noneMatchHint'))}</span></div>`;
   }
 
   function renderOrders() {
     const orders = getActiveOrders();
-    els.orderSelect.innerHTML = orders.length ? orders.map(order => `<option value="${esc(order.id)}">${esc(order.name)}</option>`).join('') : '<option value="">No orders yet</option>';
+    els.orderSelect.innerHTML = orders.length ? orders.map(order => `<option value="${esc(order.id)}">${esc(order.name)}</option>`).join('') : `<option value="">${esc(t('orders.none'))}</option>`;
     els.orderSelect.disabled = !orders.length;
     els.deleteOrderBtn.disabled = !orders.length;
     const order = getSelectedOrder();
@@ -578,12 +601,12 @@
 
     if (!state.activeProjectId) {
       els.orderSummary.innerHTML = '';
-      els.orderBoards.innerHTML = '<div class="empty-state panel"><strong>Create a project first.</strong><span>Projects determine which shared parts are available to an assembly order.</span></div>';
+      els.orderBoards.innerHTML = `<div class="empty-state panel"><strong>${esc(t('orders.createProject'))}</strong><span>${esc(t('orders.createProjectHint'))}</span></div>`;
       return;
     }
     if (!order) {
       els.orderSummary.innerHTML = '';
-      els.orderBoards.innerHTML = '<div class="empty-state panel"><strong>No assembly order for this project.</strong><span>Create an order, then add project parts under Desk, Bed, Wardrobe and Kitchen.</span></div>';
+      els.orderBoards.innerHTML = `<div class="empty-state panel"><strong>${esc(t('orders.noneForProject'))}</strong><span>${esc(t('orders.noneForProjectHint'))}</span></div>`;
       return;
     }
 
@@ -594,7 +617,7 @@
       const part = state.parts.find(candidate => candidate.id === item.partId);
       return !part || part.quantity < item.quantityNeeded;
     }).length;
-    els.orderSummary.innerHTML = `<div class="summary-chip"><span>Required lines</span><strong>${total}</strong></div><div class="summary-chip"><span>Packed lines</span><strong>${packed}</strong></div><div class="summary-chip"><span>Shortages</span><strong>${shortages}</strong></div>`;
+    els.orderSummary.innerHTML = `<div class="summary-chip"><span>${esc(t('orders.requiredLines'))}</span><strong>${total}</strong></div><div class="summary-chip"><span>${esc(t('orders.packedLines'))}</span><strong>${packed}</strong></div><div class="summary-chip"><span>${esc(t('orders.shortages'))}</span><strong>${shortages}</strong></div>`;
 
     els.orderBoards.innerHTML = CATEGORIES.map(category => {
       const items = order.items.filter(item => item.category === category);
@@ -602,21 +625,21 @@
         const part = state.parts.find(candidate => candidate.id === item.partId);
         const available = part?.quantity ?? 0;
         const insufficient = !item.packed && available < item.quantityNeeded;
-        const codeName = part ? `${part.code} — ${part.name}` : 'Deleted master part';
+        const codeName = part ? `${part.code} — ${part.name}` : t('inventory.deletedPart');
         const size = part ? dimensionLabel(part) : '';
-        const metadata = part ? [size !== '—' ? size : '', assemblyLabel(part) !== '—' ? `Part ${assemblyLabel(part)}` : ''].filter(Boolean).join(' · ') : '';
-        const stockText = item.packed ? 'Packed on pallet; shared stock deducted' : `${available} in shared stock${metadata ? ` · ${metadata}` : ''}`;
+        const metadata = part ? [size !== '—' ? size : '', assemblyLabel(part) !== '—' ? t('orders.partMeta', { assembly: assemblyLabel(part) }) : ''].filter(Boolean).join(' · ') : '';
+        const stockText = item.packed ? t('orders.packedStock') : t('orders.sharedStock', { count: available, metadata: metadata ? ` · ${metadata}` : '' });
         return `<div class="check-item ${item.packed ? 'packed' : ''}">
           <input type="checkbox" data-action="toggle-pack" data-item-id="${esc(item.id)}" ${item.packed ? 'checked' : ''} ${!part ? 'disabled' : ''} />
           <div class="part-label"><div class="part-identity-inline">${partIdentityMarkup(part)}</div><span>${esc(stockText)}</span></div>
           <label class="needed-editor ${insufficient ? 'short' : ''}">
-            <span>Needed</span>
-            <input type="number" min="1" step="1" inputmode="numeric" value="${item.quantityNeeded}" data-action="edit-needed" data-item-id="${esc(item.id)}" aria-label="Needed quantity for ${esc(codeName)}" ${!part ? 'disabled' : ''} />
+            <span>${esc(t('orders.needed'))}</span>
+            <input type="number" min="1" step="1" inputmode="numeric" value="${item.quantityNeeded}" data-action="edit-needed" data-item-id="${esc(item.id)}" aria-label="${esc(t('orders.neededAria', { name: codeName }))}" ${!part ? 'disabled' : ''} />
           </label>
-          <button class="remove-item" data-action="remove-order-item" data-item-id="${esc(item.id)}" aria-label="Remove item">×</button>
+          <button class="remove-item" data-action="remove-order-item" data-item-id="${esc(item.id)}" aria-label="${esc(t('orders.removeAria'))}">×</button>
         </div>`;
-      }).join('') : '<div class="column-empty">No parts added to this section.</div>';
-      return `<article class="order-column"><div class="order-column-head"><h3>${category}</h3><button data-action="add-order-item" data-category="${category}">+ Add part</button></div><div class="checklist">${itemHtml}</div></article>`;
+      }).join('') : `<div class="column-empty">${esc(t('orders.noneInSection'))}</div>`;
+      return `<article class="order-column"><div class="order-column-head"><h3>${esc(categoryLabel(category))}</h3><button data-action="add-order-item" data-category="${category}">${esc(t('orders.addPart'))}</button></div><div class="checklist">${itemHtml}</div></article>`;
     }).join('');
   }
 
@@ -634,8 +657,8 @@
 
     const storedUnits = state.stockPallets.reduce((sum, pallet) => sum + pallet.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
     const distinctParts = new Set(state.stockPallets.flatMap(pallet => pallet.items.map(item => item.partId))).size;
-    els.stockSummary.innerHTML = `<div class="summary-chip"><span>Stored pallets</span><strong>${state.stockPallets.length}</strong></div><div class="summary-chip"><span>Different parts</span><strong>${distinctParts}</strong></div><div class="summary-chip"><span>Units at store</span><strong>${storedUnits}</strong></div>`;
-    els.stockSearchInfo.textContent = query ? `${pallets.length} matching pallet${pallets.length === 1 ? '' : 's'}` : '';
+    els.stockSummary.innerHTML = `<div class="summary-chip"><span>${esc(t('stock.storedPallets'))}</span><strong>${state.stockPallets.length}</strong></div><div class="summary-chip"><span>${esc(t('stock.differentParts'))}</span><strong>${distinctParts}</strong></div><div class="summary-chip"><span>${esc(t('stock.unitsAtStore'))}</span><strong>${storedUnits}</strong></div>`;
+    els.stockSearchInfo.textContent = query ? t(pallets.length === 1 ? 'stock.matchingPallet' : 'stock.matchingPallets', { count: pallets.length }) : '';
 
     els.stockPalletGrid.innerHTML = pallets.length ? pallets.map(pallet => {
       const units = pallet.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -645,13 +668,13 @@
       }).join('');
       const overflowCount = pallet.items.filter(item => state.parts.find(part => part.id === item.partId)?.overflowing).length;
       return `<article class="stock-pallet-card">
-        <div class="stock-pallet-card-head"><div><span class="delivery-label">Delivery ${esc(pallet.deliveryNumber)}</span><h3>Pallet ${esc(pallet.palletNumber)}</h3></div><span class="pallet-unit-count">${units}</span></div>
-        <div class="stock-pallet-meta"><span>${pallet.items.length} part lines</span><span>${units} units</span>${overflowCount ? `<span class="overflow-text">${overflowCount} overflowing</span>` : ''}</div>
-        <div class="stock-card-parts">${preview || '<span class="muted">No parts added yet.</span>'}${pallet.items.length > 3 ? `<small>+${pallet.items.length - 3} more</small>` : ''}</div>
+        <div class="stock-pallet-card-head"><div><span class="delivery-label">${esc(t('common.delivery'))} ${esc(pallet.deliveryNumber)}</span><h3>${esc(t('common.pallet'))} ${esc(pallet.palletNumber)}</h3></div><span class="pallet-unit-count">${units}</span></div>
+        <div class="stock-pallet-meta"><span>${esc(t('common.partLines', { count: pallet.items.length }))}</span><span>${esc(t('common.units', { count: units }))}</span>${overflowCount ? `<span class="overflow-text">${esc(t('stock.overflowingCount', { count: overflowCount }))}</span>` : ''}</div>
+        <div class="stock-card-parts">${preview || `<span class="muted">${esc(t('stock.noPartsYet'))}</span>`}${pallet.items.length > 3 ? `<small>${esc(t('common.more', { count: pallet.items.length - 3 }))}</small>` : ''}</div>
         ${pallet.notes ? `<p class="stock-pallet-note">${esc(pallet.notes)}</p>` : ''}
-        <button class="secondary stock-pallet-open" data-pallet-id="${esc(pallet.id)}" type="button">Open pallet</button>
+        <button class="secondary stock-pallet-open" data-pallet-id="${esc(pallet.id)}" type="button">${esc(t('stock.openPallet'))}</button>
       </article>`;
-    }).join('') : `<div class="empty-state panel stock-empty"><strong>${query ? 'No pallets contain that part.' : 'No stored pallets yet.'}</strong><span>${query ? 'Try another code or part name.' : 'Create a pallet using its delivery and pallet numbers.'}</span></div>`;
+    }).join('') : `<div class="empty-state panel stock-empty"><strong>${esc(t(query ? 'stock.noSearchResults' : 'stock.none'))}</strong><span>${esc(t(query ? 'stock.noSearchResultsHint' : 'stock.noneHint'))}</span></div>`;
   }
 
   function openStockPalletDialog(pallet = null) {
@@ -660,7 +683,7 @@
     $('[name="deliveryNumber"]', els.stockPalletForm).value = pallet?.deliveryNumber || '';
     $('[name="palletNumber"]', els.stockPalletForm).value = pallet?.palletNumber || '';
     $('[name="notes"]', els.stockPalletForm).value = pallet?.notes || '';
-    els.stockPalletDialogTitle.textContent = pallet ? 'Edit stored pallet' : 'Create a stored pallet';
+    els.stockPalletDialogTitle.textContent = t(pallet ? 'stockPalletDialog.editTitle' : 'stockPalletDialog.createTitle');
     closeDialog(els.stockPalletDetailDialog);
     openDialog(els.stockPalletDialog);
   }
@@ -683,23 +706,23 @@
     els.stockUnknownPart.classList.add('hidden');
 
     if (!raw) {
-      els.stockPartMatchHint.textContent = 'Choose a master part. Stored quantities are tracked separately from received stock.';
+      els.stockPartMatchHint.textContent = t('stock.chooseMaster');
       submitButton.disabled = true;
       return;
     }
     if (alreadyAdded) {
-      els.stockPartMatchHint.textContent = 'This part is already on the pallet. Edit its quantity in the pallet list.';
+      els.stockPartMatchHint.textContent = t('stock.alreadyOnPallet');
       els.stockPartMatchHint.classList.add('warning');
       submitButton.disabled = true;
       return;
     }
     if (part) {
-      els.stockPartMatchHint.textContent = `${part.quantity} received · ${storedQuantityForPart(part.id)} already at store${part.overflowing ? ' · marked overflowing' : ''}.`;
+      els.stockPartMatchHint.textContent = t('stock.matchDetails', { received: part.quantity, stored: storedQuantityForPart(part.id), overflowing: part.overflowing ? t('stock.markedOverflowingSuffix') : '' });
       if (part.overflowing) els.stockPartMatchHint.classList.add('warning');
       submitButton.disabled = false;
       return;
     }
-    els.stockPartMatchHint.textContent = 'No exact Master Inventory match. Create this master part before adding it to the pallet.';
+    els.stockPartMatchHint.textContent = t('stock.noExactMatch');
     els.stockPartMatchHint.classList.add('warning');
     els.stockUnknownPart.classList.remove('hidden');
     submitButton.disabled = true;
@@ -713,7 +736,7 @@
     $('[name="quantity"]', els.stockItemForm).value = 1;
     const addedIds = new Set(pallet.items.map(item => item.partId));
     const availableParts = state.parts.filter(part => !addedIds.has(part.id)).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
-    els.stockPartOptions.innerHTML = availableParts.map(part => `<option value="${esc(part.code)} — ${esc(part.name)}" label="${part.quantity} received · ${storedQuantityForPart(part.id)} at store"></option>`).join('');
+    els.stockPartOptions.innerHTML = availableParts.map(part => `<option value="${esc(part.code)} — ${esc(part.name)}" label="${esc(t('stock.optionDetails', { received: part.quantity, stored: storedQuantityForPart(part.id) }))}"></option>`).join('');
     const preferred = state.parts.find(part => part.id === preferredPartId);
     els.stockPartSearch.value = preferred ? `${preferred.code} — ${preferred.name}` : '';
     closeDialog(els.stockPalletDetailDialog);
@@ -730,16 +753,16 @@
     }
     openStockPalletId = pallet.id;
     const units = pallet.items.reduce((sum, item) => sum + item.quantity, 0);
-    els.stockPalletDetailTitle.textContent = `Delivery ${pallet.deliveryNumber} · Pallet ${pallet.palletNumber}`;
-    els.stockPalletDetailMeta.innerHTML = `<span class="meta-chip">${pallet.items.length} part lines</span><span class="meta-chip">${units} stored units</span><span class="meta-chip">Created ${esc(formatDate(pallet.createdAt))}</span>${pallet.notes ? `<span class="meta-chip detail-note">${esc(pallet.notes)}</span>` : ''}`;
+    els.stockPalletDetailTitle.textContent = t('stock.detailTitle', { delivery: pallet.deliveryNumber, pallet: pallet.palletNumber });
+    els.stockPalletDetailMeta.innerHTML = `<span class="meta-chip">${esc(t('common.partLines', { count: pallet.items.length }))}</span><span class="meta-chip">${esc(t('stock.storedUnits', { count: units }))}</span><span class="meta-chip">${esc(t('stock.createdAt', { date: formatDate(pallet.createdAt) }))}</span>${pallet.notes ? `<span class="meta-chip detail-note">${esc(pallet.notes)}</span>` : ''}`;
     els.stockPalletItems.innerHTML = pallet.items.length ? pallet.items.map(item => {
       const part = state.parts.find(candidate => candidate.id === item.partId);
       return `<div class="stock-detail-item">
-        <div class="stock-detail-part"><div class="part-identity-stack">${partIdentityMarkup(part)}</div><span>${part ? `${esc(part.category)} · ${esc(dimensionLabel(part))} · ${part.quantity} received · ${storedQuantityForPart(part.id)} total at store` : 'Master part unavailable'}</span>${part?.overflowing ? '<span class="status overflowing">Overflowing</span>' : ''}</div>
-        <label class="stored-quantity-editor"><span>On pallet</span><input type="number" min="1" step="1" inputmode="numeric" value="${item.quantity}" data-action="stock-edit-quantity" data-item-id="${esc(item.id)}" /></label>
-        <button class="remove-item" data-action="stock-remove-item" data-item-id="${esc(item.id)}" aria-label="Remove part from stored pallet" type="button">×</button>
+        <div class="stock-detail-part"><div class="part-identity-stack">${partIdentityMarkup(part)}</div><span>${part ? esc(t('stock.partDetail', { category: categoryLabel(part.category), size: dimensionLabel(part), received: part.quantity, stored: storedQuantityForPart(part.id) })) : esc(t('stock.masterUnavailable'))}</span>${part?.overflowing ? `<span class="status overflowing">${esc(t('status.overflowing'))}</span>` : ''}</div>
+        <label class="stored-quantity-editor"><span>${esc(t('stock.onPallet'))}</span><input type="number" min="1" step="1" inputmode="numeric" value="${item.quantity}" data-action="stock-edit-quantity" data-item-id="${esc(item.id)}" /></label>
+        <button class="remove-item" data-action="stock-remove-item" data-item-id="${esc(item.id)}" aria-label="${esc(t('stock.removePartAria'))}" type="button">×</button>
       </div>`;
-    }).join('') : '<div class="empty-state"><strong>No parts on this pallet.</strong><span>Add the first stored part below.</span></div>';
+    }).join('') : `<div class="empty-state"><strong>${esc(t('stock.noParts'))}</strong><span>${esc(t('stock.noPartsHint'))}</span></div>`;
   }
 
   function openStockPalletDetail(palletId) {
@@ -750,8 +773,8 @@
   function renderPartProjectCheckboxes(selectedIds = []) {
     const selected = new Set(selectedIds);
     els.partProjectCheckboxes.innerHTML = state.projects.length
-      ? state.projects.map(project => `<label class="check-row"><input type="checkbox" name="projectIds" value="${esc(project.id)}" ${selected.has(project.id) ? 'checked' : ''} /><span><strong>${esc(project.name)}</strong><small>${esc(project.location || 'No location')}</small></span></label>`).join('')
-      : '<div class="checkbox-empty">No projects yet. You can save the part now and assign it later.</div>';
+      ? state.projects.map(project => `<label class="check-row"><input type="checkbox" name="projectIds" value="${esc(project.id)}" ${selected.has(project.id) ? 'checked' : ''} /><span><strong>${esc(project.name)}</strong><small>${esc(project.location || t('common.noLocation'))}</small></span></label>`).join('')
+      : `<div class="checkbox-empty">${esc(t('partDialog.noProjects'))}</div>`;
   }
 
   function findDuplicateMasterPart(id, code, assemblyPosition, assemblyTotal) {
@@ -770,7 +793,7 @@
 
     els.partDuplicateWarning.classList.toggle('hidden', !duplicate);
     els.partDuplicateWarning.textContent = duplicate
-      ? `Duplicate master part: ${duplicate.code} with ${position && total ? `Part number ${position} / Total parts ${total}` : 'no Part number / Total parts'} already exists. Change the code or numbering, or edit the existing part.`
+      ? t('partDialog.duplicate', { code: duplicate.code, numbering: position && total ? t('partDialog.numbering', { position, total }) : t('partDialog.noNumbering') })
       : '';
     return duplicate;
   }
@@ -793,15 +816,15 @@
     $('[name="overflowing"]', els.partForm).checked = Boolean(source.overflowing);
     $('[name="notes"]', els.partForm).value = source.notes || '';
     renderPartProjectCheckboxes(source.projectIds || (state.activeProjectId ? [state.activeProjectId] : []));
-    els.partDialogTitle.textContent = part ? 'Edit master part' : 'Add a master part';
+    els.partDialogTitle.textContent = t(part ? 'partDialog.editTitle' : 'partDialog.addTitle');
     updatePartDuplicateWarning();
     openDialog(els.partDialog);
   }
 
   function updateProjectPhotoPreview() {
     els.projectPhotoPreview.innerHTML = projectPhotoDraft
-      ? `<img src="${esc(projectPhotoDraft)}" alt="Project preview" />`
-      : '<span>No photo selected</span>';
+      ? `<img src="${esc(projectPhotoDraft)}" alt="${esc(t('projectDialog.previewAlt'))}" />`
+      : `<span>${esc(t('projectDialog.noPhoto'))}</span>`;
     els.removeProjectPhotoBtn.disabled = !projectPhotoDraft;
   }
 
@@ -813,7 +836,7 @@
     $('[name="reference"]', els.projectForm).value = project?.reference || '';
     projectPhotoDraft = project?.photo || '';
     projectPhotoBusy = false;
-    els.projectDialogTitle.textContent = project ? 'Edit project' : 'Create a new project';
+    els.projectDialogTitle.textContent = t(project ? 'projectDialog.editTitle' : 'projectDialog.createTitle');
     updateProjectPhotoPreview();
     openDialog(els.projectDialog);
   }
@@ -822,7 +845,7 @@
     if (!project?.photo) return;
     els.photoDialogTitle.textContent = project.name;
     els.expandedProjectPhoto.src = project.photo;
-    els.expandedProjectPhoto.alt = `${project.name} project photo`;
+    els.expandedProjectPhoto.alt = t('projectDialog.expandedAlt', { name: project.name });
     openDialog(els.photoDialog);
   }
 
@@ -864,9 +887,9 @@
     els.projectPartsList.innerHTML = parts.length
       ? parts.map(part => {
         const size = dimensionLabel(part);
-        return `<label class="check-row"><input type="checkbox" value="${esc(part.id)}" ${projectPartsDraft.has(part.id) ? 'checked' : ''} /><span><span class="part-identity-inline">${partIdentityMarkup(part)}</span><small>${esc(part.category)} · ${part.quantity} received · ${storedQuantityForPart(part.id)} at store${size !== '—' ? ` · ${esc(size)}` : ''}${assemblyLabel(part) !== '—' ? ` · ${esc(assemblyLabel(part))}` : ''}</small></span></label>`;
+        return `<label class="check-row"><input type="checkbox" value="${esc(part.id)}" ${projectPartsDraft.has(part.id) ? 'checked' : ''} /><span><span class="part-identity-inline">${partIdentityMarkup(part)}</span><small>${esc(categoryLabel(part.category))} · ${esc(t('common.received', { count: part.quantity }))} · ${esc(t('common.atStore', { count: storedQuantityForPart(part.id) }))}${size !== '—' ? ` · ${esc(size)}` : ''}${assemblyLabel(part) !== '—' ? ` · ${esc(assemblyLabel(part))}` : ''}</small></span></label>`;
       }).join('')
-      : `<div class="checkbox-empty">${state.parts.length ? 'No master parts match this search.' : 'No master parts yet. Add them in Inventory first.'}</div>`;
+      : `<div class="checkbox-empty">${esc(t(state.parts.length ? 'projectParts.noneSearch' : 'projectParts.none'))}</div>`;
     if (!projectId) closeDialog(els.projectPartsDialog);
   }
 
@@ -876,14 +899,14 @@
     $('[name="projectId"]', els.projectPartsForm).value = projectId;
     projectPartsDraft = new Set(state.parts.filter(part => partInProject(part, projectId)).map(part => part.id));
     els.projectPartsSearch.value = '';
-    els.projectPartsTitle.textContent = `Parts in ${project.name}`;
+    els.projectPartsTitle.textContent = t('projectParts.forProject', { name: project.name });
     renderProjectPartsList();
     openDialog(els.projectPartsDialog);
   }
 
   function openOrderItemDialog(category) {
     const order = getSelectedOrder();
-    if (!order) return showToast('Create an order first.');
+    if (!order) return showToast(t('message.createOrderFirst'));
     const includedPartIds = new Set(order.items.map(item => item.partId));
     const matchingParts = state.parts
       .filter(part => partInProject(part, state.activeProjectId) && (part.category === category || part.category === 'Other'))
@@ -891,8 +914,8 @@
     const availableParts = matchingParts.filter(part => !includedPartIds.has(part.id));
     const select = $('[name="partId"]', els.orderItemForm);
     select.innerHTML = availableParts.length
-      ? availableParts.map(part => `<option value="${esc(part.id)}">${esc(part.code)} — ${esc(part.name)} (${part.quantity} shared)</option>`).join('')
-      : `<option value="">${matchingParts.length ? 'All matching parts are already on this checklist' : 'No matching project parts'}</option>`;
+      ? availableParts.map(part => `<option value="${esc(part.id)}">${esc(t('orderItem.option', { code: part.code, name: part.name, quantity: part.quantity }))}</option>`).join('')
+      : `<option value="">${esc(t(matchingParts.length ? 'orderItem.allAdded' : 'orderItem.noneMatch'))}</option>`;
     select.disabled = !availableParts.length;
     $('[name="category"]', els.orderItemForm).value = category;
     $('[name="quantityNeeded"]', els.orderItemForm).value = 1;
@@ -900,8 +923,8 @@
     if (!availableParts.length) {
       els.availabilityHint.className = 'availability-hint';
       els.availabilityHint.textContent = matchingParts.length
-        ? 'Every matching part is already on this checklist. Change its needed amount directly on the checklist.'
-        : 'Include a matching master part in this project first.';
+        ? t('orderItem.everyAdded')
+        : t('orderItem.includeFirst');
       if (!matchingParts.length) els.availabilityHint.classList.add('danger');
       openDialog(els.orderItemDialog);
       return;
@@ -916,21 +939,21 @@
     const part = state.parts.find(candidate => candidate.id === partId);
     els.availabilityHint.className = 'availability-hint';
     if (!part) {
-      els.availabilityHint.textContent = 'Include a matching master part in this project first.';
+      els.availabilityHint.textContent = t('orderItem.includeFirst');
       els.availabilityHint.classList.add('danger');
       return;
     }
     if (part.quantity <= 0) {
-      els.availabilityHint.textContent = `Out of shared stock. You need ${needed}, but none are available.`;
+      els.availabilityHint.textContent = t('orderItem.out', { needed });
       els.availabilityHint.classList.add('danger');
     } else if (part.quantity < needed) {
-      els.availabilityHint.textContent = `Shortage: you need ${needed}, but only ${part.quantity} shared units are available.`;
+      els.availabilityHint.textContent = t('orderItem.shortage', { needed, available: part.quantity });
       els.availabilityHint.classList.add('danger');
     } else if (part.quantity <= 4 || part.quantity - needed <= 4) {
-      els.availabilityHint.textContent = `${part.quantity} shared units available. Packing this leaves ${part.quantity - needed}, which is low stock.`;
+      els.availabilityHint.textContent = t('orderItem.lowAfter', { available: part.quantity, remaining: part.quantity - needed });
       els.availabilityHint.classList.add('warning');
     } else {
-      els.availabilityHint.textContent = `${part.quantity} shared units available. Packing this leaves ${part.quantity - needed}.`;
+      els.availabilityHint.textContent = t('orderItem.availableAfter', { available: part.quantity, remaining: part.quantity - needed });
     }
   }
 
@@ -971,7 +994,7 @@
   function deleteProject(projectId) {
     const project = state.projects.find(item => item.id === projectId);
     if (!project) return;
-    if (!window.confirm(`Delete “${project.name}”? Its orders will be deleted and packed quantities restored. Master parts will remain in Inventory.`)) return;
+    if (!window.confirm(t('message.projectDeletedConfirm', { name: project.name }))) return;
     const projectOrders = state.orders.filter(order => order.projectId === projectId);
     restorePackedStockForOrders(projectOrders);
     state.orders = state.orders.filter(order => order.projectId !== projectId);
@@ -980,19 +1003,19 @@
     addActivity('Project deleted', `${project.name}; master parts kept`);
     ensureValidSelections();
     renderAll();
-    showToast('Project deleted. Shared master parts were kept.');
+    showToast(t('message.projectDeleted'));
   }
 
   function deleteOrder(orderId) {
     const order = state.orders.find(candidate => candidate.id === orderId);
     if (!order) return;
-    if (!window.confirm(`Delete “${order.name}”? Packed quantities will be restored to shared inventory.`)) return;
+    if (!window.confirm(t('message.orderDeletedConfirm', { name: order.name }))) return;
     restorePackedStockForOrders([order]);
     state.orders = state.orders.filter(candidate => candidate.id !== orderId);
     addActivity('Assembly order deleted', order.name);
     state.selectedOrderId = null;
     renderAll();
-    showToast('Order deleted and packed stock restored.');
+    showToast(t('message.orderDeleted'));
   }
 
   function deletePart(partId) {
@@ -1001,15 +1024,15 @@
     const referenced = state.orders.some(order => order.items.some(item => item.partId === partId));
     const storedReferences = state.stockPallets.reduce((count, pallet) => count + pallet.items.filter(item => item.partId === partId).length, 0);
     const message = referenced || storedReferences
-      ? `Delete master part ${part.code} — ${part.name}? It will be removed from every linked project and assembly checklist${storedReferences ? `, plus ${storedReferences} stored pallet line(s)` : ''}. Packed quantities will not be restored because the master record is being deleted.`
-      : `Delete master part ${part.code} — ${part.name} from every project?`;
+      ? t('message.deletePartReferences', { code: part.code, name: part.name, stored: storedReferences ? t('message.storedLinesSuffix', { count: storedReferences }) : '' })
+      : t('message.deletePartSimple', { code: part.code, name: part.name });
     if (!window.confirm(message)) return;
     state.orders.forEach(order => { order.items = order.items.filter(item => item.partId !== partId); });
     state.stockPallets.forEach(pallet => { pallet.items = pallet.items.filter(item => item.partId !== partId); });
     state.parts = state.parts.filter(candidate => candidate.id !== partId);
     addActivity('Master part deleted', `${part.code} — ${part.name}`);
     renderAll();
-    showToast('Master part deleted everywhere.');
+    showToast(t('message.partDeleted'));
   }
 
   function adjustPartQuantity(partId, delta) {
@@ -1029,7 +1052,7 @@
     addActivity(part.overflowing ? 'Part marked overflowing' : 'Storage space restored', `${part.code} — ${part.name}`);
     renderAll();
     if (openStockPalletId) renderStockPalletDetail();
-    showToast(part.overflowing ? 'Part marked as overflowing.' : 'Part marked as having available space.');
+    showToast(t(part.overflowing ? 'message.overflowing' : 'message.spaceAvailable'));
   }
 
   function updateStockPalletItemQuantity(itemId, requestedQuantity) {
@@ -1038,7 +1061,7 @@
     if (!item) return;
     const numericQuantity = Number(requestedQuantity);
     if (!Number.isFinite(numericQuantity) || numericQuantity < 1) {
-      showToast('Stored quantity must be at least 1.');
+      showToast(t('message.storedMinimum'));
       renderStockPalletDetail();
       return;
     }
@@ -1050,7 +1073,7 @@
     addActivity('Stored pallet quantity changed', `${part?.code || 'Part'}: ${previousQuantity} → ${nextQuantity} on Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
     renderAll();
     renderStockPalletDetail();
-    showToast('Stored quantity updated.');
+    showToast(t('message.storedUpdated'));
   }
 
   function removeStockPalletItem(itemId) {
@@ -1058,24 +1081,24 @@
     const item = pallet?.items.find(candidate => candidate.id === itemId);
     if (!item) return;
     const part = state.parts.find(candidate => candidate.id === item.partId);
-    if (!window.confirm(`Remove ${part?.code || 'this part'} from Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}?`)) return;
+    if (!window.confirm(t('message.removeStoredConfirm', { part: part?.code || t('common.part'), delivery: pallet.deliveryNumber, pallet: pallet.palletNumber }))) return;
     pallet.items = pallet.items.filter(candidate => candidate.id !== itemId);
     addActivity('Part removed from stored pallet', `${part?.code || 'Part'} from Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
     renderAll();
     renderStockPalletDetail();
-    showToast('Part removed from stored pallet.');
+    showToast(t('message.storedPartRemoved'));
   }
 
   function deleteStockPallet(palletId) {
     const pallet = getStockPallet(palletId);
     if (!pallet) return;
-    if (!window.confirm(`Delete Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber} and all of its stored-part quantities?`)) return;
+    if (!window.confirm(t('message.deletePalletConfirm', { delivery: pallet.deliveryNumber, pallet: pallet.palletNumber }))) return;
     state.stockPallets = state.stockPallets.filter(candidate => candidate.id !== palletId);
     addActivity('Stored pallet deleted', `Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
     openStockPalletId = null;
     closeDialog(els.stockPalletDetailDialog);
     renderAll();
-    showToast('Stored pallet deleted.');
+    showToast(t('message.palletDeleted'));
   }
 
   function togglePacked(itemId, shouldPack) {
@@ -1084,13 +1107,13 @@
     if (!item) return;
     const part = state.parts.find(candidate => candidate.id === item.partId);
     if (!part) {
-      showToast('This master part no longer exists.');
+      showToast(t('message.partMissing'));
       renderOrders();
       return;
     }
     if (shouldPack && !item.packed) {
       if (part.quantity < item.quantityNeeded) {
-        showToast(`Not enough ${part.code}. Need ${item.quantityNeeded}; only ${part.quantity} shared units available.`);
+        showToast(t('message.notEnough', { code: part.code, needed: item.quantityNeeded, available: part.quantity }));
         renderOrders();
         return;
       }
@@ -1111,14 +1134,14 @@
     if (!item) return;
     const part = state.parts.find(candidate => candidate.id === item.partId);
     if (!part) {
-      showToast('This master part no longer exists.');
+      showToast(t('message.partMissing'));
       renderOrders();
       return;
     }
 
     const numericQuantity = Number(requestedQuantity);
     if (!Number.isFinite(numericQuantity) || numericQuantity < 1) {
-      showToast('Needed quantity must be at least 1.');
+      showToast(t('message.neededMinimum'));
       renderOrders();
       return;
     }
@@ -1131,7 +1154,7 @@
 
     const difference = nextQuantity - previousQuantity;
     if (item.packed && difference > 0 && part.quantity < difference) {
-      showToast(`Not enough ${part.code}. Increasing this line needs ${difference} more; only ${part.quantity} shared units are available.`);
+      showToast(t('message.notEnoughIncrease', { code: part.code, difference, available: part.quantity }));
       renderOrders();
       return;
     }
@@ -1139,7 +1162,7 @@
     item.quantityNeeded = nextQuantity;
     addActivity('Checklist amount changed', `${part.code}: ${previousQuantity} → ${nextQuantity}${item.packed ? '; packed stock adjusted' : ''}`);
     renderAll();
-    showToast(item.packed ? 'Needed amount and shared stock updated.' : 'Needed amount updated.');
+    showToast(t(item.packed ? 'message.amountStockUpdated' : 'message.amountUpdated'));
   }
 
   function removeOrderItem(itemId) {
@@ -1190,7 +1213,7 @@
     openStockPalletDialog();
   });
   els.newOrderBtn.addEventListener('click', () => {
-    if (!state.activeProjectId) return showToast('Create a project first.');
+    if (!state.activeProjectId) return showToast(t('orders.createProject'));
     els.orderForm.reset();
     openDialog(els.orderDialog);
   });
@@ -1199,16 +1222,16 @@
     const file = els.projectPhotoInput.files?.[0];
     if (!file) return;
     projectPhotoBusy = true;
-    els.projectPhotoPreview.innerHTML = '<span>Preparing photo…</span>';
+    els.projectPhotoPreview.innerHTML = `<span>${esc(t('message.photoPreparing'))}</span>`;
     try {
       projectPhotoDraft = await compressImage(file);
       updateProjectPhotoPreview();
-      showToast('Project photo ready.');
+      showToast(t('message.photoReady'));
     } catch (error) {
       console.error(error);
       projectPhotoDraft = '';
       updateProjectPhotoPreview();
-      showToast('Could not use that photo. Try a JPG or PNG.');
+      showToast(t('message.photoFailed'));
     } finally {
       projectPhotoBusy = false;
     }
@@ -1226,7 +1249,7 @@
 
   els.projectForm.addEventListener('submit', event => {
     event.preventDefault();
-    if (projectPhotoBusy) return showToast('The photo is still being prepared.');
+    if (projectPhotoBusy) return showToast(t('message.photoStillPreparing'));
     const data = new FormData(els.projectForm);
     const id = String(data.get('id') || '');
     const payload = {
@@ -1250,7 +1273,7 @@
     }
     closeDialog(els.projectDialog);
     renderAll();
-    showToast(id ? 'Project updated.' : 'Project created.');
+    showToast(t(id ? 'message.projectUpdated' : 'message.projectCreated'));
   });
 
   els.partForm.addEventListener('submit', event => {
@@ -1260,12 +1283,12 @@
     const code = String(data.get('code') || '').trim().toUpperCase();
     const position = positiveIntegerOrBlank(data.get('assemblyPosition'));
     const total = positiveIntegerOrBlank(data.get('assemblyTotal'));
-    if ((position && !total) || (!position && total)) return showToast('Enter both assembly numbers, for example 2 / 5.');
-    if (position && total && position > total) return showToast('The part number cannot be higher than the total number of parts.');
+    if ((position && !total) || (!position && total)) return showToast(t('message.assemblyBoth'));
+    if (position && total && position > total) return showToast(t('message.assemblyOrder'));
     const duplicate = findDuplicateMasterPart(id, code, position, total);
     if (duplicate) {
       updatePartDuplicateWarning();
-      return showToast(`Duplicate not saved: ${code} with ${position && total ? `${position}/${total}` : 'no part numbering'} already exists.`);
+      return showToast(t('message.duplicateNotSaved', { code, numbering: position && total ? `${position}/${total}` : t('partDialog.noNumbering') }));
     }
 
     const nextProjectIds = data.getAll('projectIds').map(String);
@@ -1308,10 +1331,10 @@
     renderAll();
     if (!id && returnPalletId && getStockPallet(returnPalletId)) {
       openStockItemDialog(returnPalletId, savedPart.id);
-      showToast('Master part created. Now add its stored quantity to the pallet.');
+      showToast(t('message.masterCreatedReturn'));
       return;
     }
-    showToast(removedItems ? `Part updated. ${removedItems} checklist item(s) were removed from unlinked projects.` : (id ? 'Master part updated everywhere.' : 'Master part added.'));
+    showToast(removedItems ? t('message.partUpdatedRemoved', { count: removedItems }) : t(id ? 'message.masterUpdated' : 'message.masterAdded'));
   });
 
   els.projectPartsSearch.addEventListener('input', renderProjectPartsList);
@@ -1337,7 +1360,7 @@
     addActivity('Project parts updated', `${project.name}: ${projectPartsDraft.size} linked master parts`);
     closeDialog(els.projectPartsDialog);
     renderAll();
-    showToast(removedItems ? `Project parts saved. ${removedItems} old checklist item(s) were removed.` : 'Project parts saved.');
+    showToast(removedItems ? t('message.projectPartsRemoved', { count: removedItems }) : t('message.projectPartsSaved'));
   });
 
   els.orderForm.addEventListener('submit', event => {
@@ -1350,7 +1373,7 @@
     addActivity('Assembly order created', order.name);
     closeDialog(els.orderDialog);
     renderAll();
-    showToast('Assembly order created.');
+    showToast(t('message.orderCreated'));
   });
 
   els.orderItemForm.addEventListener('submit', event => {
@@ -1362,19 +1385,19 @@
     const quantityNeeded = Math.max(1, Number(data.get('quantityNeeded')) || 1);
     const category = String(data.get('category') || 'Other');
     const part = state.parts.find(candidate => candidate.id === partId);
-    if (!part || !partInProject(part, state.activeProjectId)) return showToast('Choose a part included in this project.');
+    if (!part || !partInProject(part, state.activeProjectId)) return showToast(t('message.chooseProjectPart'));
     if (order.items.some(item => item.partId === partId)) {
       closeDialog(els.orderItemDialog);
       renderAll();
-      return showToast('That part is already on this checklist. Edit its needed amount directly on the checklist.');
+      return showToast(t('message.checklistDuplicate'));
     }
     order.items.push({ id: uid('item'), partId, category, quantityNeeded, packed: false });
     addActivity('Part added to assembly order', `${part.code} × ${quantityNeeded} for ${order.name}`);
     closeDialog(els.orderItemDialog);
     renderAll();
-    if (part.quantity < quantityNeeded) showToast('Part added, but shared stock is insufficient.');
-    else if (part.quantity <= 4 || part.quantity - quantityNeeded <= 4) showToast('Part added. Shared stock is at or near the low threshold.');
-    else showToast('Part added to checklist.');
+    if (part.quantity < quantityNeeded) showToast(t('message.partAddedShort'));
+    else if (part.quantity <= 4 || part.quantity - quantityNeeded <= 4) showToast(t('message.partAddedLow'));
+    else showToast(t('message.partAddedChecklist'));
   });
 
   $('[name="partId"]', els.orderItemForm).addEventListener('change', updateAvailabilityHint);
@@ -1389,7 +1412,7 @@
     const notes = String(data.get('notes') || '').trim();
     if (!deliveryNumber || !palletNumber) return;
     const duplicate = state.stockPallets.find(pallet => pallet.id !== id && pallet.deliveryNumber.toLowerCase() === deliveryNumber.toLowerCase() && pallet.palletNumber.toLowerCase() === palletNumber.toLowerCase());
-    if (duplicate) return showToast('That delivery and pallet number combination already exists.');
+    if (duplicate) return showToast(t('message.palletDuplicate'));
 
     let pallet;
     if (id) {
@@ -1406,7 +1429,7 @@
     closeDialog(els.stockPalletDialog);
     renderAll();
     openStockPalletDetail(pallet.id);
-    showToast(id ? 'Stored pallet details updated.' : 'Stored pallet created. Add its parts next.');
+    showToast(t(id ? 'message.palletUpdated' : 'message.palletCreated'));
   });
 
   els.stockPartSearch.addEventListener('input', updateStockPartMatch);
@@ -1416,15 +1439,15 @@
     const pallet = getStockPallet(String(data.get('palletId') || ''));
     const part = state.parts.find(candidate => candidate.id === String(data.get('partId') || ''));
     const quantity = Math.max(1, Math.floor(Number(data.get('quantity')) || 1));
-    if (!pallet || !part) return showToast('Choose an existing master part or create it first.');
-    if (pallet.items.some(item => item.partId === part.id)) return showToast('This part is already on the pallet. Edit its quantity in the pallet list.');
+    if (!pallet || !part) return showToast(t('message.chooseOrCreatePart'));
+    if (pallet.items.some(item => item.partId === part.id)) return showToast(t('message.palletPartDuplicate'));
     pallet.items.push({ id: uid('stock_item'), partId: part.id, quantity });
     addActivity('Part added to stored pallet', `${part.code} × ${quantity}; Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
     openStockPalletId = pallet.id;
     closeDialog(els.stockItemDialog);
     renderAll();
     openStockPalletDetail(pallet.id);
-    showToast(part.overflowing ? 'Part added. It is currently marked as overflowing.' : 'Part added to stored pallet.');
+    showToast(t(part.overflowing ? 'message.partAddedOverflowing' : 'message.partAddedPallet'));
   });
 
   els.createStockMasterPartBtn.addEventListener('click', () => {
@@ -1478,7 +1501,7 @@
       renderAll();
       els.inventoryProjectFilter.value = projectId;
       switchView('inventory');
-      showToast(`${getProjectName(projectId)} opened.`);
+      showToast(t('message.projectOpened', { name: getProjectName(projectId) }));
     }
     if (manageButton) openProjectPartsDialog(manageButton.dataset.id);
     if (editButton) openProjectDialog(state.projects.find(project => project.id === editButton.dataset.id));
@@ -1514,6 +1537,16 @@
     if (quantityInput) updateOrderItemQuantity(quantityInput.dataset.itemId, quantityInput.value);
   });
 
+  els.languageSelect.addEventListener('change', () => {
+    const nextLanguage = els.languageSelect.value;
+    if (!LANGUAGE_CODES.has(nextLanguage) || nextLanguage === state.language) return;
+    state.language = nextLanguage;
+    renderAll();
+    switchView(currentView);
+    const languageName = I18N.languages.find(language => language.code === nextLanguage)?.name || nextLanguage;
+    showToast(t('message.languageChanged', { language: languageName }));
+  });
+
   els.exportBtn.addEventListener('click', () => {
     const backup = { ...state, exportedAt: new Date().toISOString() };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
@@ -1525,7 +1558,7 @@
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 500);
-    showToast('Backup exported.');
+    showToast(t('message.backupExported'));
   });
 
   els.importInput.addEventListener('change', async () => {
@@ -1533,25 +1566,27 @@
     if (!file) return;
     try {
       const imported = migrateState(JSON.parse(await file.text()));
-      if (!window.confirm('Import this backup and replace all current local data?')) return;
+      if (!window.confirm(t('message.importConfirm'))) return;
       state = imported;
       addActivity('Backup imported', file.name);
       ensureValidSelections();
       renderAll();
-      showToast('Backup imported successfully.');
+      showToast(t('message.backupImported'));
     } catch (error) {
       console.error(error);
-      showToast('Could not import this file. Please use a valid StoreFlow backup.');
+      showToast(t('message.backupInvalid'));
     } finally {
       els.importInput.value = '';
     }
   });
 
   els.resetBtn.addEventListener('click', () => {
-    if (!window.confirm('Erase all StoreFlow data on this device and return to a blank workspace?')) return;
+    if (!window.confirm(t('message.resetConfirm'))) return;
+    const language = state.language;
     state = createInitialState();
+    state.language = language;
     renderAll();
-    showToast('Local data reset.');
+    showToast(t('message.resetDone'));
   });
 
   if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:') && !location.hostname.includes('livecodes')) {

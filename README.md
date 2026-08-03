@@ -12,6 +12,7 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - Dismissible master-inventory warnings and information banners.
 - Mark parts as overflowing when no additional storage space is available.
 - A separate Stock area for undelivered store pallets, identified by delivery and pallet number.
+- Persistent interface languages: English, Ukrainian, Russian and Polish.
 - Search stored pallets by part, edit pallet quantities directly, and create missing master parts from the pallet workflow.
 - Master Inventory shows received quantities alongside totals still held at the store.
 - Create, rename and delete projects.
@@ -34,6 +35,7 @@ storeflow/
 ├── assets/icons/                # iPhone and PWA icons
 ├── docs/                        # architecture and deployment notes
 ├── scripts/validate.mjs         # repository validation
+├── src/i18n.js                  # complete four-language UI catalogue
 ├── src/app.js                   # application logic and data model
 ├── src/styles.css               # mobile-first interface
 ├── index.html                   # application shell
@@ -73,3 +75,7 @@ After the first push:
 ## Data safety
 
 Use **Data & settings → Export backup** regularly. Project photos are stored inside the backup and may increase its size.
+
+## Keeping translations current
+
+All interface copy belongs in `src/i18n.js`; UI code and markup reference catalogue keys instead of embedding messages. Every new English key must be translated into Ukrainian, Russian and Polish with the same placeholders. `npm run validate` checks exact key parity, non-empty values, placeholder parity, and every catalogue key referenced by the HTML and JavaScript, so an incomplete language update cannot pass validation.
