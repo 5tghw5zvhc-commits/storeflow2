@@ -313,8 +313,8 @@
     els.storageNotice?.classList.toggle('hidden', storageAvailable);
   }
 
-  function addActivity(text, detail = '') {
-    state.activity.unshift({ id: uid('activity'), text, detail, createdAt: new Date().toISOString() });
+  function addActivity(textKey, detail = '') {
+    state.activity.unshift({ id: uid('activity'), textKey, detail, createdAt: new Date().toISOString() });
     state.activity = state.activity.slice(0, 40);
   }
 
@@ -1000,7 +1000,7 @@
     state.orders = state.orders.filter(order => order.projectId !== projectId);
     state.parts.forEach(part => { part.projectIds = (part.projectIds || []).filter(id => id !== projectId); });
     state.projects = state.projects.filter(item => item.id !== projectId);
-    addActivity('Project deleted', `${project.name}; master parts kept`);
+    addActivity('activity.projectDeleted', project.name);
     ensureValidSelections();
     renderAll();
     showToast(t('message.projectDeleted'));
@@ -1012,7 +1012,7 @@
     if (!window.confirm(t('message.orderDeletedConfirm', { name: order.name }))) return;
     restorePackedStockForOrders([order]);
     state.orders = state.orders.filter(candidate => candidate.id !== orderId);
-    addActivity('Assembly order deleted', order.name);
+    addActivity('activity.orderDeleted', order.name);
     state.selectedOrderId = null;
     renderAll();
     showToast(t('message.orderDeleted'));
@@ -1030,7 +1030,7 @@
     state.orders.forEach(order => { order.items = order.items.filter(item => item.partId !== partId); });
     state.stockPallets.forEach(pallet => { pallet.items = pallet.items.filter(item => item.partId !== partId); });
     state.parts = state.parts.filter(candidate => candidate.id !== partId);
-    addActivity('Master part deleted', `${part.code} — ${part.name}`);
+    addActivity('activity.partDeleted', `${part.code} — ${part.name}`);
     renderAll();
     showToast(t('message.partDeleted'));
   }
@@ -1041,7 +1041,7 @@
     const next = Math.max(0, part.quantity + delta);
     if (next === part.quantity) return;
     part.quantity = next;
-    addActivity('Shared stock quantity changed', `${part.code} is now ${part.quantity} in every linked project`);
+    addActivity('activity.sharedStockChanged', `${part.code}: ${part.quantity}`);
     renderAll();
   }
 
@@ -1049,7 +1049,7 @@
     const part = state.parts.find(candidate => candidate.id === partId);
     if (!part) return;
     part.overflowing = !part.overflowing;
-    addActivity(part.overflowing ? 'Part marked overflowing' : 'Storage space restored', `${part.code} — ${part.name}`);
+    addActivity(part.overflowing ? 'activity.overflowing' : 'activity.spaceRestored', `${part.code} — ${part.name}`);
     renderAll();
     if (openStockPalletId) renderStockPalletDetail();
     showToast(t(part.overflowing ? 'message.overflowing' : 'message.spaceAvailable'));
@@ -1070,7 +1070,7 @@
     const previousQuantity = item.quantity;
     item.quantity = nextQuantity;
     const part = state.parts.find(candidate => candidate.id === item.partId);
-    addActivity('Stored pallet quantity changed', `${part?.code || 'Part'}: ${previousQuantity} → ${nextQuantity} on Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
+    addActivity('activity.stockPalletQuantityChanged', `${part?.code || t('common.part')}: ${previousQuantity} → ${nextQuantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     renderAll();
     renderStockPalletDetail();
     showToast(t('message.storedUpdated'));
@@ -1083,7 +1083,7 @@
     const part = state.parts.find(candidate => candidate.id === item.partId);
     if (!window.confirm(t('message.removeStoredConfirm', { part: part?.code || t('common.part'), delivery: pallet.deliveryNumber, pallet: pallet.palletNumber }))) return;
     pallet.items = pallet.items.filter(candidate => candidate.id !== itemId);
-    addActivity('Part removed from stored pallet', `${part?.code || 'Part'} from Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
+    addActivity('activity.stockPalletPartRemoved', `${part?.code || t('common.part')} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     renderAll();
     renderStockPalletDetail();
     showToast(t('message.storedPartRemoved'));
@@ -1094,7 +1094,7 @@
     if (!pallet) return;
     if (!window.confirm(t('message.deletePalletConfirm', { delivery: pallet.deliveryNumber, pallet: pallet.palletNumber }))) return;
     state.stockPallets = state.stockPallets.filter(candidate => candidate.id !== palletId);
-    addActivity('Stored pallet deleted', `Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
+    addActivity('activity.stockPalletDeleted', `${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     openStockPalletId = null;
     closeDialog(els.stockPalletDetailDialog);
     renderAll();
@@ -1119,11 +1119,11 @@
       }
       part.quantity -= item.quantityNeeded;
       item.packed = true;
-      addActivity('Part packed on pallet', `${part.code} × ${item.quantityNeeded}; shared stock updated`);
+      addActivity('activity.partPacked', `${part.code} × ${item.quantityNeeded}`);
     } else if (!shouldPack && item.packed) {
       part.quantity += item.quantityNeeded;
       item.packed = false;
-      addActivity('Part removed from pallet', `${part.code} × ${item.quantityNeeded} restored to shared stock`);
+      addActivity('activity.partUnpacked', `${part.code} × ${item.quantityNeeded}`);
     }
     renderAll();
   }
@@ -1160,7 +1160,7 @@
     }
     if (item.packed) part.quantity -= difference;
     item.quantityNeeded = nextQuantity;
-    addActivity('Checklist amount changed', `${part.code}: ${previousQuantity} → ${nextQuantity}${item.packed ? '; packed stock adjusted' : ''}`);
+    addActivity('activity.checklistChanged', `${part.code}: ${previousQuantity} → ${nextQuantity}`);
     renderAll();
     showToast(t(item.packed ? 'message.amountStockUpdated' : 'message.amountUpdated'));
   }
@@ -1172,7 +1172,7 @@
     const part = state.parts.find(candidate => candidate.id === item.partId);
     if (item.packed && part) part.quantity += item.quantityNeeded;
     order.items = order.items.filter(candidate => candidate.id !== itemId);
-    addActivity('Checklist item removed', part ? `${part.code} from ${order.name}` : order.name);
+    addActivity('activity.checklistRemoved', part ? `${part.code} · ${order.name}` : order.name);
     renderAll();
   }
 
@@ -1263,13 +1263,13 @@
       const project = state.projects.find(candidate => candidate.id === id);
       if (!project) return;
       Object.assign(project, payload);
-      addActivity('Project updated', project.name);
+      addActivity('activity.projectUpdated', project.name);
     } else {
       const project = { id: uid('project'), ...payload, createdAt: new Date().toISOString() };
       state.projects.push(project);
       state.activeProjectId = project.id;
       state.selectedOrderId = null;
-      addActivity('Project created', project.name);
+      addActivity('activity.projectCreated', project.name);
     }
     closeDialog(els.projectDialog);
     renderAll();
@@ -1319,11 +1319,11 @@
       removedItems = setPartProjects(part, nextProjectIds);
       Object.assign(part, payload);
       savedPart = part;
-      addActivity('Master part updated', `${payload.code} — ${payload.name}`);
+      addActivity('activity.masterUpdated', `${payload.code} — ${payload.name}`);
     } else {
       savedPart = { id: uid('part'), ...payload, projectIds: [...new Set(nextProjectIds)] };
       state.parts.push(savedPart);
-      addActivity('Master part added', `${payload.code} × ${payload.quantity}`);
+      addActivity('activity.masterAdded', `${payload.code} × ${payload.quantity}`);
     }
     const returnPalletId = stockPartReturnPalletId;
     stockPartReturnPalletId = null;
@@ -1357,7 +1357,7 @@
       if (shouldInclude && !isIncluded) part.projectIds.push(projectId);
       if (!shouldInclude && isIncluded) removedItems += removePartFromProject(part, projectId);
     });
-    addActivity('Project parts updated', `${project.name}: ${projectPartsDraft.size} linked master parts`);
+    addActivity('activity.projectPartsUpdated', `${project.name}: ${projectPartsDraft.size}`);
     closeDialog(els.projectPartsDialog);
     renderAll();
     showToast(removedItems ? t('message.projectPartsRemoved', { count: removedItems }) : t('message.projectPartsSaved'));
@@ -1370,7 +1370,7 @@
     if (!order.name) return;
     state.orders.push(order);
     state.selectedOrderId = order.id;
-    addActivity('Assembly order created', order.name);
+    addActivity('activity.orderCreated', order.name);
     closeDialog(els.orderDialog);
     renderAll();
     showToast(t('message.orderCreated'));
@@ -1392,7 +1392,7 @@
       return showToast(t('message.checklistDuplicate'));
     }
     order.items.push({ id: uid('item'), partId, category, quantityNeeded, packed: false });
-    addActivity('Part added to assembly order', `${part.code} × ${quantityNeeded} for ${order.name}`);
+    addActivity('activity.partAddedOrder', `${part.code} × ${quantityNeeded} · ${order.name}`);
     closeDialog(els.orderItemDialog);
     renderAll();
     if (part.quantity < quantityNeeded) showToast(t('message.partAddedShort'));
@@ -1419,11 +1419,11 @@
       pallet = getStockPallet(id);
       if (!pallet) return;
       Object.assign(pallet, { deliveryNumber, palletNumber, notes });
-      addActivity('Stored pallet updated', `Delivery ${deliveryNumber}, Pallet ${palletNumber}`);
+      addActivity('activity.stockPalletUpdated', `${deliveryNumber} / ${palletNumber}`);
     } else {
       pallet = { id: uid('stock_pallet'), deliveryNumber, palletNumber, notes, createdAt: new Date().toISOString(), items: [] };
       state.stockPallets.push(pallet);
-      addActivity('Stored pallet created', `Delivery ${deliveryNumber}, Pallet ${palletNumber}`);
+      addActivity('activity.stockPalletCreated', `${deliveryNumber} / ${palletNumber}`);
     }
     openStockPalletId = pallet.id;
     closeDialog(els.stockPalletDialog);
@@ -1442,7 +1442,7 @@
     if (!pallet || !part) return showToast(t('message.chooseOrCreatePart'));
     if (pallet.items.some(item => item.partId === part.id)) return showToast(t('message.palletPartDuplicate'));
     pallet.items.push({ id: uid('stock_item'), partId: part.id, quantity });
-    addActivity('Part added to stored pallet', `${part.code} × ${quantity}; Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
+    addActivity('activity.partAddedStockPallet', `${part.code} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     openStockPalletId = pallet.id;
     closeDialog(els.stockItemDialog);
     renderAll();
@@ -1568,7 +1568,7 @@
       const imported = migrateState(JSON.parse(await file.text()));
       if (!window.confirm(t('message.importConfirm'))) return;
       state = imported;
-      addActivity('Backup imported', file.name);
+      addActivity('activity.backupImported', file.name);
       ensureValidSelections();
       renderAll();
       showToast(t('message.backupImported'));

@@ -110,6 +110,7 @@ for (const language of expectedLanguages.slice(1)) {
 const referencedKeys = new Set();
 for (const match of html.matchAll(/data-i18n(?:-placeholder|-aria)?="([^"]+)"/g)) referencedKeys.add(match[1]);
 for (const match of app.matchAll(/\bt\(\s*['"]([^'"]+)['"]/g)) referencedKeys.add(match[1]);
+for (const match of app.matchAll(/\baddActivity\(\s*['"]([^'"]+)['"]/g)) referencedKeys.add(match[1]);
 const missingReferences = [...referencedKeys].filter(key => !Object.hasOwn(i18n.translations.en, key));
 if (missingReferences.length) throw new Error(`Translation keys are referenced but undefined: ${missingReferences.join(', ')}`);
 
