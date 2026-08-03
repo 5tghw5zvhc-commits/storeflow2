@@ -62,7 +62,7 @@
   function createInitialState() {
     const now = new Date().toISOString();
     return {
-      version: 3,
+      version: 4,
       activeProjectId: null,
       selectedOrderId: null,
       projects: [],
@@ -72,6 +72,53 @@
         { id: uid('activity'), text: 'StoreFlow workspace ready', detail: 'Create a project or add your first master part to begin.', createdAt: now }
       ]
     };
+  }
+
+  function cleanDimensionValue(value) {
+    const normalized = String(value ?? '').trim().replace(',', '.');
+    if (!normalized) return '';
+    const match = normalized.match(/\d+(?:\.\d+)?/);
+    if (!match) return '';
+    const number = Number(match[0]);
+    return Number.isFinite(number) && number >= 0 ? String(number) : '';
+  }
+
+  function parseLegacyDimensions(value) {
+    const raw = String(value || '').trim();
+    const values = raw.split(/\s*(?:×|x|\*)\s*/i);
+    if (values.length < 3) return { length: '', width: '', height: '' };
+    return {
+      length: cleanDimensionValue(values[0]),
+      width: cleanDimensionValue(values[1]),
+      height: cleanDimensionValue(values[2])
+    };
+  }
+
+  function dimensionsFromPart(part = {}) {
+    const dimensionObject = part.dimensions && typeof part.dimensions === 'object' ? part.dimensions : {};
+    const legacy = parseLegacyDimensions(typeof part.dimensions === 'string' ? part.dimensions : part.size);
+    return {
+      length: cleanDimensionValue(part.length ?? dimensionObject.length ?? legacy.length),
+      width: cleanDimensionValue(part.width ?? dimensionObject.width ?? legacy.width),
+      height: cleanDimensionValue(part.height ?? dimensionObject.height ?? legacy.height)
+    };
+  }
+
+  function legacySizeValue(dimensions, fallback = '') {
+    if (dimensions.length && dimensions.width && dimensions.height) {
+      return `${dimensions.length} × ${dimensions.width} × ${dimensions.height} mm`;
+    }
+    return String(fallback || '');
+  }
+
+  function dimensionLabel(part) {
+    const dimensions = dimensionsFromPart(part);
+    const values = [
+      dimensions.length ? `L ${dimensions.length}` : '',
+      dimensions.width ? `W ${dimensions.width}` : '',
+      dimensions.height ? `H ${dimensions.height}` : ''
+    ].filter(Boolean);
+    return values.length ? `${values.join(' × ')} mm` : String(part?.size || '—');
   }
 
   function migrateState(input) {
@@ -93,6 +140,7 @@
     sourceParts.forEach(oldPart => {
       const code = String(oldPart.code || '').trim().toUpperCase() || `PART-${grouped.size + 1}`;
       const key = code;
+      const dimensions = dimensionsFromPart(oldPart);
       const links = [
         ...(Array.isArray(oldPart.projectIds) ? oldPart.projectIds : []),
         ...(oldPart.projectId ? [oldPart.projectId] : [])
@@ -105,7 +153,10 @@
           name: String(oldPart.name || 'Unnamed part'),
           category: String(oldPart.category || 'Other'),
           quantity: Math.max(0, Number(oldPart.quantity) || 0),
-          size: String(oldPart.size || oldPart.dimensions || ''),
+          length: dimensions.length,
+          width: dimensions.width,
+          height: dimensions.height,
+          size: legacySizeValue(dimensions, typeof oldPart.dimensions === 'string' ? oldPart.dimensions : oldPart.size),
           assemblyPosition: positiveIntegerOrBlank(oldPart.assemblyPosition ?? oldPart.partNumber),
           assemblyTotal: positiveIntegerOrBlank(oldPart.assemblyTotal ?? oldPart.totalParts),
           projectIds: [...new Set(links)],
@@ -116,7 +167,10 @@
         const existing = grouped.get(key);
         existing.quantity = Math.max(existing.quantity, Math.max(0, Number(oldPart.quantity) || 0));
         existing.projectIds = [...new Set([...existing.projectIds, ...links])];
-        if (!existing.size && (oldPart.size || oldPart.dimensions)) existing.size = String(oldPart.size || oldPart.dimensions);
+        ['length', 'width', 'height'].forEach(field => {
+          if (!existing[field] && dimensions[field]) existing[field] = dimensions[field];
+        });
+        if (!existing.size) existing.size = legacySizeValue(dimensions, typeof oldPart.dimensions === 'string' ? oldPart.dimensions : oldPart.size);
       }
       oldToNew.set(oldPart.id, grouped.get(key).id);
     });
@@ -141,7 +195,7 @@
       }));
 
     return {
-      version: 2,
+      version: 4,
       activeProjectId: validProjectIds.has(source.activeProjectId) ? source.activeProjectId : (projects[0]?.id || null),
       selectedOrderId: source.selectedOrderId || null,
       projects,
@@ -171,9 +225,9 @@
 
   const els = {
     sidebar: $('.sidebar'), menuBtn: $('#menuBtn'), pageTitle: $('#pageTitle'), pageEyebrow: $('#pageEyebrow'),
-    activeProjectSelect: $('#activeProjectSelect'), quickAddBtn: $('#quickAddBtn'), alertBar: $('#alertBar'), storageNotice: $('#storageNotice'),
+    quickAddBtn: $('#quickAddBtn'), alertBar: $('#alertBar'), storageNotice: $('#storageNotice'),
     statProjects: $('#statProjects'), statParts: $('#statParts'), statLow: $('#statLow'), statOut: $('#statOut'), dashboardProjectName: $('#dashboardProjectName'),
-    categoryProgress: $('#categoryProgress'), warningList: $('#warningList'), activityList: $('#activityList'),
+    categoryProgress: $('#categoryProgress'), activityList: $('#activityList'),
     projectCards: $('#projectCards'), newProjectBtn: $('#newProjectBtn'),
     inventorySearch: $('#inventorySearch'), inventoryProjectFilter: $('#inventoryProjectFilter'), inventoryStockFilter: $('#inventoryStockFilter'), inventorySort: $('#inventorySort'),
     addPartBtn: $('#addPartBtn'), inventoryTableBody: $('#inventoryTableBody'), inventoryEmpty: $('#inventoryEmpty'), inventoryCards: $('#inventoryCards'),
@@ -183,7 +237,8 @@
     projectPhotoPreview: $('#projectPhotoPreview'), removeProjectPhotoBtn: $('#removeProjectPhotoBtn'),
     projectPartsDialog: $('#projectPartsDialog'), projectPartsForm: $('#projectPartsForm'), projectPartsTitle: $('#projectPartsTitle'), projectPartsSearch: $('#projectPartsSearch'), projectPartsList: $('#projectPartsList'),
     partDialog: $('#partDialog'), partForm: $('#partForm'), partDialogTitle: $('#partDialogTitle'), partProjectCheckboxes: $('#partProjectCheckboxes'),
-    orderDialog: $('#orderDialog'), orderForm: $('#orderForm'), orderItemDialog: $('#orderItemDialog'), orderItemForm: $('#orderItemForm'), availabilityHint: $('#availabilityHint'), toast: $('#toast')
+    orderDialog: $('#orderDialog'), orderForm: $('#orderForm'), orderItemDialog: $('#orderItemDialog'), orderItemForm: $('#orderItemForm'), availabilityHint: $('#availabilityHint'),
+    photoDialog: $('#photoDialog'), photoDialogTitle: $('#photoDialogTitle'), expandedProjectPhoto: $('#expandedProjectPhoto'), toast: $('#toast')
   };
 
   const viewMeta = {
@@ -298,10 +353,6 @@
       ? state.projects.map(project => `<option value="${esc(project.id)}">${esc(project.name)}</option>`).join('')
       : '<option value="">No projects yet</option>';
 
-    els.activeProjectSelect.innerHTML = projectOptions;
-    els.activeProjectSelect.value = state.activeProjectId || '';
-    els.activeProjectSelect.disabled = !state.projects.length;
-
     const previousFilter = els.inventoryProjectFilter.value || 'all';
     els.inventoryProjectFilter.innerHTML = `<option value="all">All master parts</option><option value="unassigned">Not in a project</option>${projectOptions}`;
     els.inventoryProjectFilter.value = [...els.inventoryProjectFilter.options].some(option => option.value === previousFilter) ? previousFilter : 'all';
@@ -312,25 +363,23 @@
   }
 
   function renderAlertBar() {
-    const parts = state.activeProjectId ? getProjectParts(state.activeProjectId) : state.parts;
+    const parts = state.parts;
     const low = parts.filter(part => part.quantity > 0 && part.quantity <= 4).length;
     const out = parts.filter(part => part.quantity <= 0).length;
     if (!low && !out) {
       els.alertBar.classList.add('hidden');
       return;
     }
-    const scope = getActiveProject()?.name || 'Master inventory';
     const messages = [];
     if (out) messages.push(`${out} out of stock`);
     if (low) messages.push(`${low} low stock`);
-    els.alertBar.textContent = `⚠ ${scope}: ${messages.join(' and ')}. Changes affect every linked project.`;
+    els.alertBar.textContent = `⚠ Master inventory: ${messages.join(' and ')}. Tap a stock card below to review the complete list.`;
     els.alertBar.classList.remove('hidden');
   }
 
   function renderDashboard() {
-    const activeParts = state.activeProjectId ? getProjectParts(state.activeProjectId) : state.parts;
-    const lowParts = activeParts.filter(part => part.quantity > 0 && part.quantity <= 4);
-    const outParts = activeParts.filter(part => part.quantity <= 0);
+    const lowParts = state.parts.filter(part => part.quantity > 0 && part.quantity <= 4);
+    const outParts = state.parts.filter(part => part.quantity <= 0);
 
     els.statProjects.textContent = state.projects.length;
     els.statParts.textContent = state.parts.length;
@@ -345,13 +394,6 @@
       const percentage = items.length ? Math.round((packed / items.length) * 100) : 0;
       return `<div class="category-card"><div class="top"><strong>${category}</strong><span>${packed}/${items.length}</span></div><div class="progress-track"><div class="progress-fill" style="width:${percentage}%"></div></div></div>`;
     }).join('');
-
-    const warnings = [...outParts, ...lowParts].sort((a, b) => a.quantity - b.quantity).slice(0, 7);
-    els.warningList.innerHTML = warnings.length
-      ? warnings.map(part => `<div class="warning-item"><div><strong>${esc(part.code)} — ${esc(part.name)}</strong><span>${esc(part.category)}${part.size ? ` · ${esc(part.size)}` : ''}</span></div><span class="qty-pill ${part.quantity <= 0 ? 'out' : ''}">${part.quantity}</span></div>`).join('')
-      : state.parts.length
-        ? '<div class="empty-state"><strong>Stock levels look healthy.</strong><span>No low or empty shared parts in the active project.</span></div>'
-        : '<div class="empty-state"><strong>No stock recorded yet.</strong><span>Add your first master part to begin tracking quantities.</span></div>';
 
     els.activityList.innerHTML = state.activity.length
       ? state.activity.slice(0, 8).map(activity => `<div class="activity-item"><div><strong>${esc(activity.text)}</strong><span>${esc(activity.detail)}</span></div><span>${formatDate(activity.createdAt)}</span></div>`).join('')
@@ -370,16 +412,16 @@
       const orderCount = state.orders.filter(order => order.projectId === project.id).length;
       const isActive = project.id === state.activeProjectId;
       const photo = project.photo
-        ? `<img src="${esc(project.photo)}" alt="${esc(project.name)}" />`
-        : '<div class="project-photo-placeholder"><span>SF</span><small>Add project photo</small></div>';
+        ? `<button type="button" class="project-card-photo project-photo-expand" data-id="${esc(project.id)}" aria-label="Expand photo for ${esc(project.name)}"><img src="${esc(project.photo)}" alt="${esc(project.name)}" /><span class="photo-expand-hint">Tap to expand</span></button>`
+        : '<div class="project-card-photo"><div class="project-photo-placeholder"><span>SF</span><small>Add project photo</small></div></div>';
       return `<article class="project-card ${isActive ? 'active' : ''}">
-        <div class="project-card-photo">${photo}</div>
+        ${photo}
         <div class="project-card-body">
-          <div class="project-card-head"><div><p class="eyebrow">${isActive ? 'ACTIVE PROJECT' : 'PROJECT'}</p><h3>${esc(project.name)}</h3></div><button class="icon-button project-delete" data-id="${esc(project.id)}" aria-label="Delete project">×</button></div>
+          <div class="project-card-head"><div><p class="eyebrow">PROJECT</p><h3>${esc(project.name)}</h3></div><button class="icon-button project-delete" data-id="${esc(project.id)}" aria-label="Delete project">×</button></div>
           <p class="muted">${esc(project.location || 'No location set')}${project.reference ? ` · ${esc(project.reference)}` : ''}</p>
           <div class="project-meta"><span class="meta-chip">${linkedParts.length} linked parts</span><span class="meta-chip">${totalQty} shared units</span><span class="meta-chip">${orderCount} orders</span></div>
           <div class="project-actions project-actions-wrap">
-            <button class="${isActive ? 'secondary' : 'primary'} project-open" data-id="${esc(project.id)}">${isActive ? 'Open stock' : 'Make active'}</button>
+            <button class="${isActive ? 'secondary' : 'primary'} project-open" data-id="${esc(project.id)}">Open project</button>
             <button class="secondary project-manage-parts" data-id="${esc(project.id)}">Manage parts</button>
             <button class="secondary project-edit" data-id="${esc(project.id)}">Edit project</button>
           </div>
@@ -395,7 +437,7 @@
     const sort = els.inventorySort.value || 'name';
 
     const filtered = state.parts.filter(part => {
-      const searchable = [part.code, part.name, part.size, part.category, assemblyLabel(part), ...getProjectNames(part)].join(' ').toLowerCase();
+      const searchable = [part.code, part.name, dimensionLabel(part), part.length, part.width, part.height, part.category, assemblyLabel(part), ...getProjectNames(part)].join(' ').toLowerCase();
       const matchesQuery = !query || searchable.includes(query);
       const matchesProject = projectFilter === 'all'
         || (projectFilter === 'unassigned' && !(part.projectIds || []).length)
@@ -430,7 +472,7 @@
       return `<tr>
         <td><span class="part-code">${esc(part.code)}</span></td>
         <td><strong>${esc(part.name)}</strong>${part.notes ? `<br><small class="muted">${esc(part.notes)}</small>` : ''}</td>
-        <td>${esc(part.size || '—')}</td>
+        <td>${esc(dimensionLabel(part))}</td>
         <td><span class="assembly-badge">${esc(assemblyLabel(part))}</span></td>
         <td>${esc(part.category)}</td>
         <td><div class="project-chip-row">${projectChips(part, 2)}</div></td>
@@ -445,7 +487,7 @@
       const status = stockStatus(part.quantity);
       return `<article class="inventory-card">
         <div class="inventory-card-head"><div><span class="part-code">${esc(part.code)}</span><h3>${esc(part.name)}</h3></div><span class="status ${status.key}">${status.label}</span></div>
-        <div class="inventory-card-meta"><span class="meta-chip">${esc(part.category)}</span><span class="meta-chip">Size: ${esc(part.size || '—')}</span><span class="meta-chip">Assembly: ${esc(assemblyLabel(part))}</span>${part.notes ? `<span class="meta-chip">${esc(part.notes)}</span>` : ''}</div>
+        <div class="inventory-card-meta"><span class="meta-chip">${esc(part.category)}</span><span class="meta-chip">Size: ${esc(dimensionLabel(part))}</span><span class="meta-chip">Assembly: ${esc(assemblyLabel(part))}</span>${part.notes ? `<span class="meta-chip">${esc(part.notes)}</span>` : ''}</div>
         <div class="project-chip-row card-projects">${projectChips(part, 4)}</div>
         <div class="shared-stock-label">Shared quantity across every linked project</div>
         <div class="inventory-card-bottom"><div class="stock-control large"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="Reduce shared quantity">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="Increase shared quantity">+</button></div><div class="row-actions"><button type="button" data-action="edit" data-id="${esc(part.id)}">Edit</button><button type="button" data-action="delete" data-id="${esc(part.id)}">Delete</button></div></div>
@@ -488,7 +530,8 @@
         const available = part?.quantity ?? 0;
         const insufficient = !item.packed && available < item.quantityNeeded;
         const codeName = part ? `${part.code} — ${part.name}` : 'Deleted master part';
-        const metadata = part ? [part.size, assemblyLabel(part) !== '—' ? `Part ${assemblyLabel(part)}` : ''].filter(Boolean).join(' · ') : '';
+        const size = part ? dimensionLabel(part) : '';
+        const metadata = part ? [size !== '—' ? size : '', assemblyLabel(part) !== '—' ? `Part ${assemblyLabel(part)}` : ''].filter(Boolean).join(' · ') : '';
         const stockText = item.packed ? 'Packed on pallet; shared stock deducted' : `${available} in shared stock${metadata ? ` · ${metadata}` : ''}`;
         return `<div class="check-item ${item.packed ? 'packed' : ''}">
           <input type="checkbox" data-action="toggle-pack" data-item-id="${esc(item.id)}" ${item.packed ? 'checked' : ''} ${!part ? 'disabled' : ''} />
@@ -514,7 +557,10 @@
     $('[name="code"]', els.partForm).value = part?.code || '';
     $('[name="name"]', els.partForm).value = part?.name || '';
     $('[name="quantity"]', els.partForm).value = part?.quantity ?? 1;
-    $('[name="size"]', els.partForm).value = part?.size || '';
+    const dimensions = dimensionsFromPart(part || {});
+    $('[name="length"]', els.partForm).value = dimensions.length;
+    $('[name="width"]', els.partForm).value = dimensions.width;
+    $('[name="height"]', els.partForm).value = dimensions.height;
     $('[name="category"]', els.partForm).value = part?.category || 'Desk';
     $('[name="assemblyPosition"]', els.partForm).value = part?.assemblyPosition || '';
     $('[name="assemblyTotal"]', els.partForm).value = part?.assemblyTotal || '';
@@ -542,6 +588,14 @@
     els.projectDialogTitle.textContent = project ? 'Edit project' : 'Create a new project';
     updateProjectPhotoPreview();
     openDialog(els.projectDialog);
+  }
+
+  function openExpandedProjectPhoto(project) {
+    if (!project?.photo) return;
+    els.photoDialogTitle.textContent = project.name;
+    els.expandedProjectPhoto.src = project.photo;
+    els.expandedProjectPhoto.alt = `${project.name} project photo`;
+    openDialog(els.photoDialog);
   }
 
   function compressImage(file) {
@@ -578,9 +632,12 @@
   function renderProjectPartsList() {
     const projectId = $('[name="projectId"]', els.projectPartsForm).value;
     const query = els.projectPartsSearch.value.trim().toLowerCase();
-    const parts = state.parts.filter(part => !query || [part.code, part.name, part.size, part.category].join(' ').toLowerCase().includes(query));
+    const parts = state.parts.filter(part => !query || [part.code, part.name, dimensionLabel(part), part.category].join(' ').toLowerCase().includes(query));
     els.projectPartsList.innerHTML = parts.length
-      ? parts.map(part => `<label class="check-row"><input type="checkbox" value="${esc(part.id)}" ${projectPartsDraft.has(part.id) ? 'checked' : ''} /><span><strong>${esc(part.code)} — ${esc(part.name)}</strong><small>${esc(part.category)} · ${part.quantity} shared units${part.size ? ` · ${esc(part.size)}` : ''}${assemblyLabel(part) !== '—' ? ` · ${esc(assemblyLabel(part))}` : ''}</small></span></label>`).join('')
+      ? parts.map(part => {
+        const size = dimensionLabel(part);
+        return `<label class="check-row"><input type="checkbox" value="${esc(part.id)}" ${projectPartsDraft.has(part.id) ? 'checked' : ''} /><span><strong>${esc(part.code)} — ${esc(part.name)}</strong><small>${esc(part.category)} · ${part.quantity} shared units${size !== '—' ? ` · ${esc(size)}` : ''}${assemblyLabel(part) !== '—' ? ` · ${esc(assemblyLabel(part))}` : ''}</small></span></label>`;
+      }).join('')
       : `<div class="checkbox-empty">${state.parts.length ? 'No master parts match this search.' : 'No master parts yet. Add them in Inventory first.'}</div>`;
     if (!projectId) closeDialog(els.projectPartsDialog);
   }
@@ -769,13 +826,13 @@
   $$('.nav-item').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
   $$('[data-jump]').forEach(button => button.addEventListener('click', () => switchView(button.dataset.jump)));
   $$('.close-dialog').forEach(button => button.addEventListener('click', () => closeDialog(button.closest('dialog'))));
-
-  els.activeProjectSelect.addEventListener('change', () => {
-    state.activeProjectId = els.activeProjectSelect.value || null;
-    state.selectedOrderId = getActiveOrders()[0]?.id || null;
-    addActivity('Active project changed', getActiveProject()?.name || 'No project');
-    renderAll();
-  });
+  $$('[data-stock-filter]').forEach(button => button.addEventListener('click', () => {
+    els.inventorySearch.value = '';
+    els.inventoryProjectFilter.value = 'all';
+    els.inventoryStockFilter.value = button.dataset.stockFilter;
+    switchView('inventory');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }));
 
   els.quickAddBtn.addEventListener('click', () => openPartDialog());
   els.addPartBtn.addEventListener('click', () => openPartDialog());
@@ -837,7 +894,7 @@
     }
     closeDialog(els.projectDialog);
     renderAll();
-    showToast(id ? 'Project updated.' : 'Project created and made active.');
+    showToast(id ? 'Project updated.' : 'Project created.');
   });
 
   els.partForm.addEventListener('submit', event => {
@@ -854,11 +911,17 @@
     if (position && total && position > total) return showToast('The part number cannot be higher than the total number of parts.');
 
     const nextProjectIds = data.getAll('projectIds').map(String);
+    const dimensions = {
+      length: cleanDimensionValue(data.get('length')),
+      width: cleanDimensionValue(data.get('width')),
+      height: cleanDimensionValue(data.get('height'))
+    };
     const payload = {
       code,
       name: String(data.get('name') || '').trim(),
       quantity: Math.max(0, Number(data.get('quantity')) || 0),
-      size: String(data.get('size') || '').trim(),
+      ...dimensions,
+      size: legacySizeValue(dimensions),
       category: String(data.get('category') || 'Other'),
       assemblyPosition: position,
       assemblyTotal: total,
@@ -946,22 +1009,21 @@
   $('[name="quantityNeeded"]', els.orderItemForm).addEventListener('input', updateAvailabilityHint);
 
   els.projectCards.addEventListener('click', event => {
+    const photoButton = event.target.closest('.project-photo-expand');
     const openButton = event.target.closest('.project-open');
     const manageButton = event.target.closest('.project-manage-parts');
     const editButton = event.target.closest('.project-edit');
     const deleteButton = event.target.closest('.project-delete');
+    if (photoButton) openExpandedProjectPhoto(state.projects.find(project => project.id === photoButton.dataset.id));
     if (openButton) {
       const projectId = openButton.dataset.id;
-      if (state.activeProjectId === projectId) {
-        els.inventoryProjectFilter.value = projectId;
-        switchView('inventory');
-      } else {
-        state.activeProjectId = projectId;
-        state.selectedOrderId = state.orders.find(order => order.projectId === projectId)?.id || null;
-        addActivity('Active project changed', getProjectName(projectId));
-        renderAll();
-        showToast('Active project changed.');
-      }
+      state.activeProjectId = projectId;
+      state.selectedOrderId = state.orders.find(order => order.projectId === projectId)?.id || null;
+      els.inventoryProjectFilter.value = projectId;
+      renderAll();
+      els.inventoryProjectFilter.value = projectId;
+      switchView('inventory');
+      showToast(`${getProjectName(projectId)} opened.`);
     }
     if (manageButton) openProjectPartsDialog(manageButton.dataset.id);
     if (editButton) openProjectDialog(state.projects.find(project => project.id === editButton.dataset.id));

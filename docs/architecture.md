@@ -13,7 +13,9 @@ Key fields:
 - `name`
 - `category`
 - `quantity`
-- `size`
+- `length`
+- `width`
+- `height`
 - `assemblyPosition`
 - `assemblyTotal`
 - `projectIds[]`
@@ -41,6 +43,8 @@ A cloud version should preserve the same concepts using tables such as:
 - `activity`
 
 The many-to-many `project_parts` table replaces the local `projectIds` array.
+
+Legacy `size` strings are migrated in length × width × height order. For example, `680 × 260 × 18` becomes length `680`, width `260` and height `18`.
 
 ## Offline behaviour
 

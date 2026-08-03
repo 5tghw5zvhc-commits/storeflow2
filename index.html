@@ -41,7 +41,6 @@
 <h2 id="pageTitle">Dashboard</h2>
 </div>
 <div class="topbar-actions">
-<label class="project-picker"><span>Active project</span><select id="activeProjectSelect"></select></label>
 <button class="primary" id="quickAddBtn">+ Add stock</button>
 </div>
 </header>
@@ -49,17 +48,16 @@
 <div class="storage-notice hidden" id="storageNotice" role="status">Temporary preview mode: changes work now but may not remain after the page closes. Open the hosted version in Safari for permanent saving.</div>
 <section class="view active-view" id="dashboardView">
 <div class="stats-grid">
-<article class="stat-card"><span>Projects</span><strong id="statProjects">0</strong><small>active workspaces</small></article>
+<article class="stat-card"><span>Projects</span><strong id="statProjects">0</strong><small>total projects</small></article>
 <article class="stat-card"><span>Master parts</span><strong id="statParts">0</strong><small>shared inventory records</small></article>
-<article class="stat-card warning-accent"><span>Low stock</span><strong id="statLow">0</strong><small>4 units or fewer</small></article>
-<article class="stat-card danger-accent"><span>Out of stock</span><strong id="statOut">0</strong><small>needs attention</small></article>
+<button class="stat-card stat-card-action warning-accent" data-stock-filter="low" type="button"><span>Low stock</span><strong id="statLow">0</strong><small>Tap to view and scroll</small></button>
+<button class="stat-card stat-card-action danger-accent" data-stock-filter="out" type="button"><span>Out of stock</span><strong id="statOut">0</strong><small>Tap to view and scroll</small></button>
 </div>
 <div class="dashboard-grid">
 <article class="panel span-2">
 <div class="panel-head"><div><p class="eyebrow">CURRENT PROJECT</p><h3 id="dashboardProjectName">No project selected</h3></div><button class="secondary" data-jump="orders">Open orders</button></div>
 <div class="category-progress" id="categoryProgress"></div>
 </article>
-<article class="panel"><div class="panel-head"><div><p class="eyebrow">ATTENTION NEEDED</p><h3>Stock warnings</h3></div></div><div class="list-stack" id="warningList"></div></article>
 <article class="panel span-2"><div class="panel-head"><div><p class="eyebrow">RECENT ACTIVITY</p><h3>Latest updates</h3></div></div><div class="activity-list" id="activityList"></div></article>
 </div>
 </section>
@@ -73,7 +71,7 @@
 <section class="view" id="inventoryView">
 <div class="inventory-note">Add every physical part once. Project filters only change which shared parts are displayed; the quantity always remains the same everywhere.</div>
 <div class="section-toolbar inventory-toolbar">
-<div class="search-wrap"><input id="inventorySearch" placeholder="Search code, name, size or assembly number" type="search"/></div>
+<div class="search-wrap"><input id="inventorySearch" placeholder="Search code, name, measurements or assembly number" type="search"/></div>
 <div class="filter-row">
 <select id="inventoryProjectFilter"></select>
 <select id="inventoryStockFilter">
@@ -159,7 +157,14 @@
 <label>Shared quantity<input inputmode="numeric" min="0" name="quantity" required="" type="number" value="1"/></label>
 </div>
 <label>Part name<input name="name" placeholder="e.g. Kick Board" required=""/></label>
-<label>Size / dimensions<input name="size" placeholder="e.g. 720 × 100 × 18 mm"/></label>
+<fieldset class="dimensions-fieldset">
+<legend>Size / dimensions (mm)</legend>
+<div class="dimensions-fields">
+<label>Length<input inputmode="decimal" min="0" name="length" placeholder="680" step="any" type="number"/></label>
+<label>Width<input inputmode="decimal" min="0" name="width" placeholder="260" step="any" type="number"/></label>
+<label>Height<input inputmode="decimal" min="0" name="height" placeholder="18" step="any" type="number"/></label>
+</div>
+</fieldset>
 <div class="form-grid">
 <label>Category<select name="category" required=""><option>Desk</option><option>Bed</option><option>Wardrobe</option><option>Kitchen</option><option>Other</option></select></label>
 <div class="assembly-fields">
@@ -194,6 +199,13 @@
 <div class="availability-hint" id="availabilityHint"></div>
 <div class="modal-actions"><button class="secondary close-dialog" type="button">Cancel</button><button class="primary" type="submit">Add to checklist</button></div>
 </form>
+</dialog>
+<dialog class="photo-dialog" id="photoDialog">
+<div class="photo-dialog-content">
+<div class="modal-head"><div><p class="eyebrow">PROJECT PHOTO</p><h3 id="photoDialogTitle">Project photo</h3></div><button aria-label="Close expanded photo" class="icon-button close-dialog" type="button">×</button></div>
+<div class="expanded-photo-frame"><img alt="Expanded project" id="expandedProjectPhoto"/></div>
+<button class="secondary close-dialog" type="button">Close photo</button>
+</div>
 </dialog>
 <div class="toast hidden" id="toast"></div>
 

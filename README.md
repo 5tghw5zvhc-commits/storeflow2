@@ -7,13 +7,14 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - A master inventory where every physical part has one shared quantity.
 - Link the same part to multiple projects without duplicating stock.
 - Shared quantity updates across **All parts** and every linked project.
-- Part code, name, category, dimensions, assembly position such as `2/5`, notes and quantity.
+- Part code, name, category, separate length/width/height measurements, assembly position such as `2/5`, notes and quantity.
 - Create, rename and delete projects.
-- Upload, replace and remove a project photo.
+- Upload, replace, remove and expand a project photo.
 - Link and unlink existing master parts from a project.
 - Assembly orders divided into Desk, Bed, Wardrobe and Kitchen.
 - Packing an order item deducts it from master stock; unpacking restores it.
 - Low-stock warnings at four units or fewer and out-of-stock warnings at zero.
+- Open filtered low-stock and out-of-stock lists directly from the dashboard cards.
 - JSON backup export and restore.
 - iPhone Home Screen installation and offline app-shell support.
 
