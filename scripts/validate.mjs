@@ -29,7 +29,7 @@ for (const reference of expectedReferences) {
   }
 }
 
-const forbiddenHtml = ['id="activeProjectSelect"', 'ATTENTION NEEDED', 'name="size"'];
+const forbiddenHtml = ['id="activeProjectSelect"', 'id="quickAddBtn"', 'ATTENTION NEEDED', 'name="size"'];
 for (const fragment of forbiddenHtml) {
   if (html.includes(fragment)) throw new Error(`index.html still contains removed interface: ${fragment}`);
 }

@@ -225,7 +225,7 @@
 
   const els = {
     sidebar: $('.sidebar'), menuBtn: $('#menuBtn'), pageTitle: $('#pageTitle'), pageEyebrow: $('#pageEyebrow'),
-    quickAddBtn: $('#quickAddBtn'), alertBar: $('#alertBar'), storageNotice: $('#storageNotice'),
+    alertBar: $('#alertBar'), storageNotice: $('#storageNotice'),
     statProjects: $('#statProjects'), statParts: $('#statParts'), statLow: $('#statLow'), statOut: $('#statOut'), dashboardProjectName: $('#dashboardProjectName'),
     categoryProgress: $('#categoryProgress'), activityList: $('#activityList'),
     projectCards: $('#projectCards'), newProjectBtn: $('#newProjectBtn'),
@@ -357,7 +357,6 @@
     els.inventoryProjectFilter.innerHTML = `<option value="all">All master parts</option><option value="unassigned">Not in a project</option>${projectOptions}`;
     els.inventoryProjectFilter.value = [...els.inventoryProjectFilter.options].some(option => option.value === previousFilter) ? previousFilter : 'all';
 
-    els.quickAddBtn.disabled = false;
     els.addPartBtn.disabled = false;
     els.newOrderBtn.disabled = !state.projects.length;
   }
@@ -834,7 +833,6 @@
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }));
 
-  els.quickAddBtn.addEventListener('click', () => openPartDialog());
   els.addPartBtn.addEventListener('click', () => openPartDialog());
   els.newProjectBtn.addEventListener('click', () => openProjectDialog());
   els.newOrderBtn.addEventListener('click', () => {
