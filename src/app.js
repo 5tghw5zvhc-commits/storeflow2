@@ -13,6 +13,8 @@
   let projectPartsDraft = new Set();
   let openStockPalletId = null;
   let stockPartReturnPalletId = null;
+  let selectedStockPartIds = new Set();
+  let stockPlannerFeedback = null;
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -286,7 +288,7 @@
     inventorySearch: $('#inventorySearch'), inventoryProjectFilter: $('#inventoryProjectFilter'), inventoryStockFilter: $('#inventoryStockFilter'), inventorySort: $('#inventorySort'),
     addPartBtn: $('#addPartBtn'), inventoryTableBody: $('#inventoryTableBody'), inventoryEmpty: $('#inventoryEmpty'), inventoryCards: $('#inventoryCards'),
     orderSelect: $('#orderSelect'), newOrderBtn: $('#newOrderBtn'), deleteOrderBtn: $('#deleteOrderBtn'), orderSummary: $('#orderSummary'), orderBoards: $('#orderBoards'),
-    newStockPalletBtn: $('#newStockPalletBtn'), stockSummary: $('#stockSummary'), stockSearch: $('#stockSearch'), stockSearchInfo: $('#stockSearchInfo'), stockPalletGrid: $('#stockPalletGrid'),
+    newStockPalletBtn: $('#newStockPalletBtn'), stockSummary: $('#stockSummary'), stockSearch: $('#stockSearch'), stockSearchInfo: $('#stockSearchInfo'), stockPlannerOptions: $('#stockPlannerOptions'), addStockSearchPart: $('#addStockSearchPart'), clearStockSearch: $('#clearStockSearch'), stockSelectedParts: $('#stockSelectedParts'), stockPlannerResults: $('#stockPlannerResults'), stockPalletGrid: $('#stockPalletGrid'),
     languageSelect: $('#languageSelect'), exportBtn: $('#exportBtn'), importInput: $('#importInput'), resetBtn: $('#resetBtn'),
     projectDialog: $('#projectDialog'), projectForm: $('#projectForm'), projectDialogTitle: $('#projectDialogTitle'), projectPhotoInput: $('#projectPhotoInput'),
     projectPhotoPreview: $('#projectPhotoPreview'), removeProjectPhotoBtn: $('#removeProjectPhotoBtn'),
@@ -643,38 +645,243 @@
     }).join('');
   }
 
-  function renderStock() {
-    const query = els.stockSearch.value.trim().toLowerCase();
-    const pallets = [...state.stockPallets]
-      .filter(pallet => {
-        const partText = pallet.items.map(item => {
-          const part = state.parts.find(candidate => candidate.id === item.partId);
-          return part ? [part.code, part.name, part.category, dimensionLabel(part), assemblyLabel(part)].join(' ') : '';
-        }).join(' ');
-        return !query || [pallet.deliveryNumber, pallet.palletNumber, pallet.notes, partText].join(' ').toLowerCase().includes(query);
-      })
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  function stockPlannerPartLabel(part) {
+    const assembly = assemblyLabel(part);
+    return `${part.code} — ${part.name}${assembly === '—' ? '' : ` [${assembly}]`}`;
+  }
 
+  function resolveStockPlannerPart(value) {
+    const normalized = String(value || '').trim().toLocaleLowerCase();
+    if (!normalized) return { part: null, reason: 'missing' };
+    const valuesFor = part => [
+      part.code,
+      part.name,
+      `${part.code} — ${part.name}`,
+      stockPlannerPartLabel(part)
+    ].map(candidate => String(candidate).toLocaleLowerCase());
+    const exact = state.parts.filter(part => valuesFor(part).includes(normalized));
+    if (exact.length === 1) return { part: exact[0], reason: '' };
+    if (exact.length > 1) return { part: null, reason: 'ambiguous' };
+    const partial = state.parts.filter(part => valuesFor(part).some(candidate => candidate.includes(normalized)));
+    if (partial.length === 1) return { part: partial[0], reason: '' };
+    return { part: null, reason: partial.length ? 'ambiguous' : 'missing' };
+  }
+
+  function addStockPlannerParts(rawValue = els.stockSearch.value) {
+    const tokens = String(rawValue || '').split(/[,;\n]+/).map(value => value.trim()).filter(Boolean);
+    if (!tokens.length) return;
+    let added = 0;
+    let duplicate = '';
+    let unresolved = null;
+    tokens.forEach(token => {
+      const result = resolveStockPlannerPart(token);
+      if (!result.part) {
+        if (!unresolved) unresolved = { token, reason: result.reason };
+        return;
+      }
+      if (selectedStockPartIds.has(result.part.id)) {
+        if (!duplicate) duplicate = result.part.code;
+        return;
+      }
+      selectedStockPartIds.add(result.part.id);
+      added += 1;
+    });
+    els.stockSearch.value = '';
+    if (unresolved) stockPlannerFeedback = { key: unresolved.reason === 'ambiguous' ? 'stock.planner.ambiguous' : 'stock.planner.noMatch', params: { part: unresolved.token } };
+    else if (duplicate && !added) stockPlannerFeedback = { key: 'stock.planner.alreadySelected', params: { part: duplicate } };
+    else stockPlannerFeedback = { key: added === 1 ? 'stock.planner.addedOne' : 'stock.planner.addedMany', params: { count: added } };
+    renderStock();
+  }
+
+  function bitCount(value) {
+    let count = 0;
+    let remaining = value;
+    while (remaining) {
+      remaining &= remaining - 1n;
+      count += 1;
+    }
+    return count;
+  }
+
+  function comparePlannerPlans(a, b) {
+    for (const key of ['overflowUnits', 'overflowLines', 'palletCount', 'unrelatedUnits', 'unrelatedLines']) {
+      if (a[key] !== b[key]) return a[key] - b[key];
+    }
+    if (a.requestedUnits !== b.requestedUnits) return b.requestedUnits - a.requestedUnits;
+    return a.pallets.map(candidate => candidate.pallet.id).sort().join('|').localeCompare(b.pallets.map(candidate => candidate.pallet.id).sort().join('|'));
+  }
+
+  function stockPlannerCandidate(pallet, requestedIds, bitById) {
+    let coverage = 0n;
+    let requestedUnits = 0;
+    let unrelatedUnits = 0;
+    let unrelatedLines = 0;
+    let overflowUnits = 0;
+    let overflowLines = 0;
+    const coveredPartIds = new Set();
+    const overflowItems = [];
+    pallet.items.forEach(item => {
+      const part = state.parts.find(candidate => candidate.id === item.partId);
+      if (requestedIds.has(item.partId)) {
+        coverage |= bitById.get(item.partId) || 0n;
+        coveredPartIds.add(item.partId);
+        requestedUnits += item.quantity;
+      } else {
+        unrelatedUnits += item.quantity;
+        unrelatedLines += 1;
+      }
+      if (part?.overflowing) {
+        overflowUnits += item.quantity;
+        overflowLines += 1;
+        overflowItems.push({ part, quantity: item.quantity });
+      }
+    });
+    return { pallet, coverage, coveredPartIds, requestedUnits, unrelatedUnits, unrelatedLines, overflowUnits, overflowLines, overflowItems };
+  }
+
+  function addCandidateToPlan(plan, candidate) {
+    return {
+      mask: plan.mask | candidate.coverage,
+      pallets: [...plan.pallets, candidate],
+      overflowUnits: plan.overflowUnits + candidate.overflowUnits,
+      overflowLines: plan.overflowLines + candidate.overflowLines,
+      palletCount: plan.palletCount + 1,
+      unrelatedUnits: plan.unrelatedUnits + candidate.unrelatedUnits,
+      unrelatedLines: plan.unrelatedLines + candidate.unrelatedLines,
+      requestedUnits: plan.requestedUnits + candidate.requestedUnits
+    };
+  }
+
+  function optimizeStockPallets(partIds) {
+    const validIds = [...new Set(partIds)].filter(id => state.parts.some(part => part.id === id));
+    const requestedIds = new Set(validIds);
+    const bitById = new Map(validIds.map((id, index) => [id, 1n << BigInt(index)]));
+    const candidates = state.stockPallets.map(pallet => stockPlannerCandidate(pallet, requestedIds, bitById)).filter(candidate => candidate.coverage);
+    const targetMask = candidates.reduce((mask, candidate) => mask | candidate.coverage, 0n);
+    const unavailablePartIds = validIds.filter(id => !(targetMask & bitById.get(id)));
+    const emptyPlan = { mask: 0n, pallets: [], overflowUnits: 0, overflowLines: 0, palletCount: 0, unrelatedUnits: 0, unrelatedLines: 0, requestedUnits: 0 };
+    if (!targetMask) return { ...emptyPlan, unavailablePartIds, exact: true, targetMask };
+
+    let bestPlan;
+    let exact = validIds.length <= 16;
+    if (exact) {
+      const plans = new Map([[0n, emptyPlan]]);
+      candidates.forEach(candidate => {
+        const snapshot = [...plans.values()];
+        snapshot.forEach(plan => {
+          const nextMask = plan.mask | candidate.coverage;
+          if (nextMask === plan.mask) return;
+          const proposal = addCandidateToPlan(plan, candidate);
+          const current = plans.get(nextMask);
+          if (!current || comparePlannerPlans(proposal, current) < 0) plans.set(nextMask, proposal);
+        });
+      });
+      bestPlan = plans.get(targetMask);
+    } else {
+      let plan = emptyPlan;
+      const unused = new Set(candidates);
+      while (plan.mask !== targetMask) {
+        const remainingMask = targetMask & ~plan.mask;
+        const useful = [...unused].filter(candidate => candidate.coverage & remainingMask);
+        const zeroOverflowCoverage = useful.filter(candidate => !candidate.overflowUnits).reduce((mask, candidate) => mask | candidate.coverage, 0n);
+        const forcedOverflowMask = remainingMask & ~zeroOverflowCoverage;
+        const pool = forcedOverflowMask
+          ? useful.filter(candidate => candidate.coverage & forcedOverflowMask)
+          : useful.filter(candidate => !candidate.overflowUnits);
+        pool.sort((a, b) => {
+          const aNew = bitCount(a.coverage & remainingMask);
+          const bNew = bitCount(b.coverage & remainingMask);
+          const aForced = bitCount(a.coverage & forcedOverflowMask) || aNew;
+          const bForced = bitCount(b.coverage & forcedOverflowMask) || bNew;
+          const aOverflowRate = a.overflowUnits / aForced;
+          const bOverflowRate = b.overflowUnits / bForced;
+          return aOverflowRate - bOverflowRate || bForced - aForced || bNew - aNew || a.unrelatedUnits - b.unrelatedUnits || b.requestedUnits - a.requestedUnits;
+        });
+        const chosen = pool[0];
+        if (!chosen) break;
+        plan = addCandidateToPlan(plan, chosen);
+        unused.delete(chosen);
+      }
+      bestPlan = plan;
+    }
+
+    const ordered = [];
+    const remaining = new Set(bestPlan.pallets);
+    let remainingMask = targetMask;
+    while (remaining.size) {
+      const ranked = [...remaining].sort((a, b) => {
+        const aNew = bitCount(a.coverage & remainingMask);
+        const bNew = bitCount(b.coverage & remainingMask);
+        return bNew - aNew || a.overflowUnits - b.overflowUnits || a.unrelatedUnits - b.unrelatedUnits || b.requestedUnits - a.requestedUnits;
+      });
+      const chosen = ranked[0];
+      ordered.push(chosen);
+      remaining.delete(chosen);
+      remainingMask &= ~chosen.coverage;
+    }
+    return { ...bestPlan, pallets: ordered, unavailablePartIds, exact, targetMask };
+  }
+
+  function stockPalletCardMarkup(pallet, plannerCandidate = null, recommendationIndex = 0, requestedIds = new Set()) {
+    const units = pallet.items.reduce((sum, item) => sum + item.quantity, 0);
+    const previewLimit = plannerCandidate ? 5 : 3;
+    const sortedItems = plannerCandidate
+      ? [...pallet.items].sort((a, b) => Number(requestedIds.has(b.partId)) - Number(requestedIds.has(a.partId)))
+      : pallet.items;
+    const preview = sortedItems.slice(0, previewLimit).map(item => {
+      const part = state.parts.find(candidate => candidate.id === item.partId);
+      const match = plannerCandidate && requestedIds.has(item.partId);
+      return `<div class="stock-card-part ${match ? 'requested-part-match' : ''}"><div>${partIdentityMarkup(part)}${match ? `<small class="needed-match-label">${esc(t('stock.planner.neededPart'))}</small>` : ''}</div><strong>×${item.quantity}</strong></div>`;
+    }).join('');
+    const overflowItems = pallet.items.map(item => ({ item, part: state.parts.find(part => part.id === item.partId) })).filter(entry => entry.part?.overflowing);
+    const recommendation = plannerCandidate ? `<div class="recommendation-label">${esc(t(recommendationIndex ? 'stock.planner.additional' : 'stock.planner.primary'))}</div>
+      <div class="planner-card-coverage">${esc(t('stock.planner.covers', { parts: [...plannerCandidate.coveredPartIds].map(id => state.parts.find(part => part.id === id)?.code).filter(Boolean).join(', ') }))}</div>
+      ${plannerCandidate.unrelatedLines ? `<div class="planner-card-extra">${esc(t('stock.planner.otherLines', { count: plannerCandidate.unrelatedLines, units: plannerCandidate.unrelatedUnits }))}</div>` : ''}
+      ${plannerCandidate.overflowUnits ? `<div class="planner-overflow-warning" role="status"><strong>${esc(t('stock.planner.overflowWarning'))}</strong><span>${esc(t('stock.planner.overflowContents', { parts: plannerCandidate.overflowItems.map(entry => `${entry.part.code} ×${entry.quantity}`).join(', ') }))}</span></div>` : ''}` : '';
+    return `<article class="stock-pallet-card ${plannerCandidate ? 'recommended-pallet' : ''} ${plannerCandidate?.overflowUnits ? 'overflow-risk' : ''}">
+      ${recommendation}
+      <div class="stock-pallet-card-head"><div><span class="delivery-label">${esc(t('common.delivery'))} ${esc(pallet.deliveryNumber)}</span><h3>${esc(t('common.pallet'))} ${esc(pallet.palletNumber)}</h3></div><span class="pallet-unit-count">${units}</span></div>
+      <div class="stock-pallet-meta"><span>${esc(t('common.partLines', { count: pallet.items.length }))}</span><span>${esc(t('common.units', { count: units }))}</span>${overflowItems.length ? `<span class="overflow-text">${esc(t('stock.overflowingCount', { count: overflowItems.length }))}</span>` : ''}</div>
+      <div class="stock-card-parts">${preview || `<span class="muted">${esc(t('stock.noPartsYet'))}</span>`}${pallet.items.length > previewLimit ? `<small>${esc(t('common.more', { count: pallet.items.length - previewLimit }))}</small>` : ''}</div>
+      ${pallet.notes ? `<p class="stock-pallet-note">${esc(pallet.notes)}</p>` : ''}
+      <button class="secondary stock-pallet-open" data-pallet-id="${esc(pallet.id)}" type="button">${esc(t('stock.openPallet'))}</button>
+    </article>`;
+  }
+
+  function renderStock() {
+    const validPartIds = new Set(state.parts.map(part => part.id));
+    selectedStockPartIds = new Set([...selectedStockPartIds].filter(id => validPartIds.has(id)));
+    const selectedParts = [...selectedStockPartIds].map(id => state.parts.find(part => part.id === id)).filter(Boolean);
+    const requestedIds = new Set(selectedParts.map(part => part.id));
+    const pallets = [...state.stockPallets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     const storedUnits = state.stockPallets.reduce((sum, pallet) => sum + pallet.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
     const distinctParts = new Set(state.stockPallets.flatMap(pallet => pallet.items.map(item => item.partId))).size;
     els.stockSummary.innerHTML = `<div class="summary-chip"><span>${esc(t('stock.storedPallets'))}</span><strong>${state.stockPallets.length}</strong></div><div class="summary-chip"><span>${esc(t('stock.differentParts'))}</span><strong>${distinctParts}</strong></div><div class="summary-chip"><span>${esc(t('stock.unitsAtStore'))}</span><strong>${storedUnits}</strong></div>`;
-    els.stockSearchInfo.textContent = query ? t(pallets.length === 1 ? 'stock.matchingPallet' : 'stock.matchingPallets', { count: pallets.length }) : '';
 
-    els.stockPalletGrid.innerHTML = pallets.length ? pallets.map(pallet => {
-      const units = pallet.items.reduce((sum, item) => sum + item.quantity, 0);
-      const preview = pallet.items.slice(0, 3).map(item => {
-        const part = state.parts.find(candidate => candidate.id === item.partId);
-        return `<div class="stock-card-part"><div>${partIdentityMarkup(part)}</div><strong>×${item.quantity}</strong></div>`;
-      }).join('');
-      const overflowCount = pallet.items.filter(item => state.parts.find(part => part.id === item.partId)?.overflowing).length;
-      return `<article class="stock-pallet-card">
-        <div class="stock-pallet-card-head"><div><span class="delivery-label">${esc(t('common.delivery'))} ${esc(pallet.deliveryNumber)}</span><h3>${esc(t('common.pallet'))} ${esc(pallet.palletNumber)}</h3></div><span class="pallet-unit-count">${units}</span></div>
-        <div class="stock-pallet-meta"><span>${esc(t('common.partLines', { count: pallet.items.length }))}</span><span>${esc(t('common.units', { count: units }))}</span>${overflowCount ? `<span class="overflow-text">${esc(t('stock.overflowingCount', { count: overflowCount }))}</span>` : ''}</div>
-        <div class="stock-card-parts">${preview || `<span class="muted">${esc(t('stock.noPartsYet'))}</span>`}${pallet.items.length > 3 ? `<small>${esc(t('common.more', { count: pallet.items.length - 3 }))}</small>` : ''}</div>
-        ${pallet.notes ? `<p class="stock-pallet-note">${esc(pallet.notes)}</p>` : ''}
-        <button class="secondary stock-pallet-open" data-pallet-id="${esc(pallet.id)}" type="button">${esc(t('stock.openPallet'))}</button>
-      </article>`;
-    }).join('') : `<div class="empty-state panel stock-empty"><strong>${esc(t(query ? 'stock.noSearchResults' : 'stock.none'))}</strong><span>${esc(t(query ? 'stock.noSearchResultsHint' : 'stock.noneHint'))}</span></div>`;
+    els.stockPlannerOptions.innerHTML = state.parts.filter(part => !requestedIds.has(part.id)).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map(part => `<option value="${esc(stockPlannerPartLabel(part))}"></option>`).join('');
+    els.stockSelectedParts.innerHTML = selectedParts.map(part => `<span class="stock-part-chip"><span>${partIdentityMarkup(part)}</span><button aria-label="${esc(t('stock.planner.removeAria', { part: part.code }))}" data-remove-stock-planner="${esc(part.id)}" type="button">×</button></span>`).join('');
+    els.clearStockSearch.classList.toggle('hidden', !selectedParts.length);
+    els.stockSearchInfo.textContent = stockPlannerFeedback ? t(stockPlannerFeedback.key, stockPlannerFeedback.params) : (selectedParts.length ? t('stock.planner.selectedCount', { count: selectedParts.length }) : '');
+
+    if (!selectedParts.length) {
+      els.stockPlannerResults.classList.add('hidden');
+      els.stockPlannerResults.innerHTML = '';
+      els.stockPalletGrid.innerHTML = pallets.length ? pallets.map(pallet => stockPalletCardMarkup(pallet)).join('') : `<div class="empty-state panel stock-empty"><strong>${esc(t('stock.none'))}</strong><span>${esc(t('stock.noneHint'))}</span></div>`;
+      return;
+    }
+
+    const result = optimizeStockPallets(selectedParts.map(part => part.id));
+    const coveredCount = bitCount(result.mask);
+    const unavailableParts = result.unavailablePartIds.map(id => state.parts.find(part => part.id === id)).filter(Boolean);
+    const recommendationKey = result.palletCount === 1 ? 'stock.planner.recommendOne' : 'stock.planner.recommendMany';
+    els.stockPlannerResults.classList.remove('hidden');
+    els.stockPlannerResults.innerHTML = `<div class="planner-result-head"><div><p class="eyebrow">${esc(t('stock.planner.resultEyebrow'))}</p><h3>${esc(t(recommendationKey, { count: result.palletCount }))}</h3></div><span class="planner-coverage">${esc(t('stock.planner.coverage', { covered: coveredCount, total: selectedParts.length }))}</span></div>
+      <div class="planner-result-metrics"><span class="${result.overflowUnits ? 'risk' : 'safe'}">${esc(result.overflowUnits ? t('stock.planner.overflowUnits', { count: result.overflowUnits }) : t('stock.planner.noOverflow'))}</span><span>${esc(t('stock.planner.unrelatedUnits', { count: result.unrelatedUnits }))}</span><span>${esc(t('stock.planner.optimized'))}</span></div>
+      ${unavailableParts.length ? `<div class="planner-unavailable"><strong>${esc(t('stock.planner.unavailableTitle'))}</strong><span>${esc(t('stock.planner.unavailable', { parts: unavailableParts.map(part => part.code).join(', ') }))}</span></div>` : ''}`;
+
+    els.stockPalletGrid.innerHTML = result.pallets.length
+      ? result.pallets.map((candidate, index) => stockPalletCardMarkup(candidate.pallet, candidate, index, requestedIds)).join('')
+      : `<div class="empty-state panel stock-empty"><strong>${esc(t('stock.planner.noRecommendation'))}</strong><span>${esc(t('stock.planner.noRecommendationHint'))}</span></div>`;
   }
 
   function openStockPalletDialog(pallet = null) {
@@ -1461,7 +1668,29 @@
     openPartDialog(null, { code, name, quantity: 0, returnPalletId: palletId });
   });
 
-  els.stockSearch.addEventListener('input', renderStock);
+  els.addStockSearchPart.addEventListener('click', () => addStockPlannerParts());
+  els.stockSearch.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addStockPlannerParts();
+  });
+  els.stockSearch.addEventListener('input', () => {
+    stockPlannerFeedback = null;
+    els.stockSearchInfo.textContent = selectedStockPartIds.size ? t('stock.planner.selectedCount', { count: selectedStockPartIds.size }) : '';
+  });
+  els.clearStockSearch.addEventListener('click', () => {
+    selectedStockPartIds.clear();
+    stockPlannerFeedback = null;
+    els.stockSearch.value = '';
+    renderStock();
+  });
+  els.stockSelectedParts.addEventListener('click', event => {
+    const button = event.target.closest('button[data-remove-stock-planner]');
+    if (!button) return;
+    selectedStockPartIds.delete(button.dataset.removeStockPlanner);
+    stockPlannerFeedback = null;
+    renderStock();
+  });
   els.stockPalletGrid.addEventListener('click', event => {
     const button = event.target.closest('.stock-pallet-open');
     if (button) openStockPalletDetail(button.dataset.palletId);

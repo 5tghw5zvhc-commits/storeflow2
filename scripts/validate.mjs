@@ -37,7 +37,7 @@ for (const fragment of forbiddenHtml) {
   if (html.includes(fragment)) throw new Error(`index.html still contains removed interface: ${fragment}`);
 }
 
-const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
+const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
 for (const fragment of requiredHtml) {
   if (!html.includes(fragment)) throw new Error(`index.html is missing requested interface: ${fragment}`);
 }
@@ -63,6 +63,9 @@ if (app.includes('part.code.toUpperCase() === code')) {
 }
 if (!app.includes('stockPallets') || !app.includes('renderStock') || !app.includes('storedQuantityForPart') || !app.includes('openStockPalletDetail')) {
   throw new Error('The undelivered Stock pallet workflow is missing.');
+}
+if (!app.includes('optimizeStockPallets') || !app.includes('comparePlannerPlans') || !app.includes('overflowUnits') || !app.includes('selectedStockPartIds')) {
+  throw new Error('The multi-part optimal pallet planner is missing.');
 }
 if (!app.includes('dismissNotice') || !app.includes('stockAlertSignature') || !app.includes('inventoryInfo')) {
   throw new Error('Dismissible inventory notices are missing.');

@@ -119,7 +119,13 @@
 <button class="primary" data-i18n="stock.newPallet" id="newStockPalletBtn">+ New pallet</button>
 </div>
 <div class="order-summary stock-summary" id="stockSummary"></div>
-<div class="stock-search-row"><input data-i18n-placeholder="stock.searchPlaceholder" id="stockSearch" placeholder="Search a part, delivery number or pallet number" type="search"/><span class="stock-search-info" id="stockSearchInfo"></span></div>
+<section class="stock-planner" aria-labelledby="stockPlannerTitle">
+<div class="stock-planner-heading"><div><p class="eyebrow" data-i18n="stock.planner.eyebrow">PALLET PLANNER</p><h3 data-i18n="stock.planner.title" id="stockPlannerTitle">Find the best pallets</h3></div><button class="secondary stock-planner-clear hidden" data-i18n="stock.planner.clear" id="clearStockSearch" type="button">Clear</button></div>
+<p class="muted stock-planner-help" data-i18n="stock.planner.help">Add every part you need. StoreFlow will avoid overflowing stock first, then use the fewest pallets and minimize unrelated parts.</p>
+<div class="stock-search-row"><div class="stock-search-controls"><input autocomplete="off" data-i18n-placeholder="stock.planner.searchPlaceholder" id="stockSearch" list="stockPlannerOptions" placeholder="Type a part code or name; separate several with commas" type="search"/><datalist id="stockPlannerOptions"></datalist><button class="primary" data-i18n="stock.planner.add" id="addStockSearchPart" type="button">Add part</button></div><span aria-live="polite" class="stock-search-info" id="stockSearchInfo"></span></div>
+<div aria-live="polite" class="stock-selected-parts" id="stockSelectedParts"></div>
+<div class="stock-planner-results hidden" id="stockPlannerResults"></div>
+</section>
 <div class="stock-pallet-grid" id="stockPalletGrid"></div>
 </section>
 <section class="view" id="settingsView">

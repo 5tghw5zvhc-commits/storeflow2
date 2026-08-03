@@ -269,10 +269,39 @@ tbody tr:last-child td { border-bottom: 0; }
 
 .stock-toolbar { align-items: center; }
 .stock-summary { max-width: 720px; }
+.stock-planner { margin-bottom: 16px; padding: 16px; border: 1px solid #bddbd6; border-radius: 17px; background: linear-gradient(145deg, #f8fcfb, #edf7f5); }
+.stock-planner-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.stock-planner-heading h3 { margin: 2px 0 0; font-size: 18px; }
+.stock-planner-clear { min-height: 38px; padding: 8px 13px; }
+.stock-planner-help { margin: 8px 0 13px; max-width: 760px; font-size: 12px; line-height: 1.5; }
 .stock-search-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-bottom: 16px; }
+.stock-search-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.stock-search-controls .primary { white-space: nowrap; }
 .stock-search-info { color: var(--muted); font-size: 12px; font-weight: 800; }
+.stock-selected-parts { display: flex; flex-wrap: wrap; gap: 7px; }
+.stock-part-chip { min-width: 0; display: inline-flex; align-items: center; gap: 8px; padding: 7px 7px 7px 9px; border: 1px solid #9bc9c2; border-radius: 12px; background: white; }
+.stock-part-chip > span { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.stock-part-chip .part-name { max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.stock-part-chip button { width: 26px; min-height: 26px; padding: 0; border: 0; border-radius: 8px; background: #edf4f2; color: var(--muted); font-size: 16px; font-weight: 900; }
+.stock-planner-results { margin-top: 14px; padding: 14px; border: 1px solid #a9d1ca; border-radius: 14px; background: white; }
+.planner-result-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.planner-result-head h3 { margin: 2px 0 0; font-size: 18px; }
+.planner-coverage { padding: 6px 9px; border-radius: 9px; background: var(--brand-soft); color: var(--brand-dark); font-size: 11px; font-weight: 900; }
+.planner-result-metrics { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.planner-result-metrics span { padding: 6px 8px; border-radius: 8px; background: #f0f4f3; color: #4f625e; font-size: 10px; font-weight: 800; }
+.planner-result-metrics .safe { background: #e4f6ec; color: #226544; }
+.planner-result-metrics .risk { background: #fff0dc; color: #8b4a16; }
+.planner-unavailable { display: grid; gap: 3px; margin-top: 11px; padding: 10px 11px; border-radius: 10px; background: var(--warning-soft); color: #765212; font-size: 11px; line-height: 1.4; }
 .stock-pallet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .stock-pallet-card { min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 17px; background: var(--panel); box-shadow: 0 6px 20px rgba(24,59,52,.04); }
+.stock-pallet-card.recommended-pallet { border-color: #73b7ac; box-shadow: 0 8px 24px rgba(15,118,110,.11); }
+.stock-pallet-card.recommended-pallet.overflow-risk { border-color: #e2a357; }
+.recommendation-label { width: max-content; max-width: 100%; padding: 5px 8px; border-radius: 8px; background: var(--brand); color: white; font-size: 9px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
+.overflow-risk .recommendation-label { background: #aa5d22; }
+.planner-card-coverage { margin-top: -3px; color: var(--brand-dark); font-size: 11px; line-height: 1.4; font-weight: 900; }
+.planner-card-extra { color: var(--muted); font-size: 10px; font-weight: 800; }
+.planner-overflow-warning { display: grid; gap: 3px; padding: 9px 10px; border: 1px solid #e6b676; border-radius: 10px; background: #fff5e7; color: #7d461b; font-size: 10px; line-height: 1.4; }
+.planner-overflow-warning strong { font-size: 11px; }
 .stock-pallet-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .stock-pallet-card h3 { margin: 4px 0 0; font-size: 18px; }
 .delivery-label { color: var(--brand); font-size: 10px; line-height: 1.3; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; overflow-wrap: anywhere; }
@@ -283,8 +312,10 @@ tbody tr:last-child td { border-bottom: 0; }
 .stock-card-parts { display: flex; flex-direction: column; gap: 7px; min-height: 64px; }
 .stock-card-part { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px; padding-bottom: 7px; border-bottom: 1px solid var(--line); }
 .stock-card-part:last-of-type { border-bottom: 0; }
+.stock-card-part.requested-part-match { margin: 0 -5px; padding: 6px 5px; border-radius: 8px; background: #edf8f6; }
 .stock-card-part .part-name { display: block; margin-top: 4px; font-size: 12px; }
 .stock-card-part > strong { font-size: 12px; }
+.needed-match-label { display: block; margin-top: 3px; color: var(--brand); font-size: 8px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; }
 .stock-card-parts small { color: var(--muted); font-weight: 800; }
 .stock-pallet-note { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.4; }
 .stock-pallet-open { width: 100%; margin-top: auto; }
@@ -566,6 +597,16 @@ table { min-width: 1380px; }
   .stock-card-part .part-code-badge { font-size: 8px; padding: 3px 5px; }
   .stock-card-part .part-name { font-size: 11px; }
   .stock-search-row { grid-template-columns: 1fr; gap: 6px; }
+  .stock-planner { padding: 12px; border-radius: 14px; }
+  .stock-planner-heading h3, .planner-result-head h3 { font-size: 16px; }
+  .stock-search-controls { grid-template-columns: 1fr; }
+  .stock-search-controls .primary { width: 100%; }
+  .stock-part-chip { max-width: 100%; }
+  .stock-part-chip .part-name { max-width: 150px; }
+  .planner-result-head { flex-direction: column; }
+  .planner-coverage { width: 100%; }
+  .planner-result-metrics span { max-width: 100%; }
+  .planner-card-coverage, .planner-card-extra, .planner-overflow-warning { overflow-wrap: anywhere; }
   .stock-detail-dialog { width: calc(100% - 16px); max-height: calc(100dvh - 16px); }
   .stock-detail-content { padding: 14px; max-height: calc(100dvh - 16px); }
   .stock-pallet-items { max-height: 54vh; }

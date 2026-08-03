@@ -13,7 +13,9 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - Mark parts as overflowing when no additional storage space is available.
 - A separate Stock area for undelivered store pallets, identified by delivery and pallet number.
 - Persistent interface languages: English, Ukrainian, Russian and Polish.
-- Search stored pallets by part, edit pallet quantities directly, and create missing master parts from the pallet workflow.
+- Search for several required parts at once and receive an optimized pallet set that avoids overflowing stock first, consolidates required parts onto fewer pallets, and minimizes unrelated stock.
+- Recommendation cards identify primary and additional pallets, explain their requested-part coverage, and warn when an unavoidable pallet contains overflowing items.
+- Edit stored-pallet quantities directly and create missing master parts from the pallet workflow.
 - Master Inventory shows received quantities alongside totals still held at the store.
 - Create, rename and delete projects.
 - Upload, replace, remove and expand a project photo.
