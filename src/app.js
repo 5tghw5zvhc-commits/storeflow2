@@ -9,6 +9,8 @@
   let projectPhotoDraft = '';
   let projectPhotoBusy = false;
   let projectPartsDraft = new Set();
+  let openStockPalletId = null;
+  let stockPartReturnPalletId = null;
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -62,12 +64,14 @@
   function createInitialState() {
     const now = new Date().toISOString();
     return {
-      version: 4,
+      version: 5,
       activeProjectId: null,
       selectedOrderId: null,
       projects: [],
       parts: [],
       orders: [],
+      stockPallets: [],
+      dismissedNotices: {},
       activity: [
         { id: uid('activity'), text: 'StoreFlow workspace ready', detail: 'Create a project or add your first master part to begin.', createdAt: now }
       ]
@@ -169,6 +173,7 @@
           size: legacySizeValue(dimensions, typeof oldPart.dimensions === 'string' ? oldPart.dimensions : oldPart.size),
           assemblyPosition,
           assemblyTotal,
+          overflowing: Boolean(oldPart.overflowing),
           projectIds: [...new Set(links)],
           notes: String(oldPart.notes || '')
         };
@@ -181,6 +186,7 @@
           if (!existing[field] && dimensions[field]) existing[field] = dimensions[field];
         });
         if (!existing.size) existing.size = legacySizeValue(dimensions, typeof oldPart.dimensions === 'string' ? oldPart.dimensions : oldPart.size);
+        existing.overflowing = existing.overflowing || Boolean(oldPart.overflowing);
       }
       oldToNew.set(oldPart.id, grouped.get(key).id);
     });
@@ -204,13 +210,30 @@
         })).filter(item => validPartIds.has(item.partId))
       }));
 
+    const stockPallets = (Array.isArray(source.stockPallets) ? source.stockPallets : (Array.isArray(source.storePallets) ? source.storePallets : []))
+      .map(pallet => ({
+        id: pallet.id || uid('stock_pallet'),
+        deliveryNumber: String(pallet.deliveryNumber || pallet.delivery || '').trim(),
+        palletNumber: String(pallet.palletNumber || pallet.number || '').trim(),
+        notes: String(pallet.notes || ''),
+        createdAt: pallet.createdAt || new Date().toISOString(),
+        items: (Array.isArray(pallet.items) ? pallet.items : []).map(item => ({
+          id: item.id || uid('stock_item'),
+          partId: oldToNew.get(item.partId) || item.partId,
+          quantity: Math.max(1, Math.floor(Number(item.quantity) || 1))
+        })).filter(item => validPartIds.has(item.partId))
+      }))
+      .filter(pallet => pallet.deliveryNumber && pallet.palletNumber);
+
     return {
-      version: 4,
+      version: 5,
       activeProjectId: validProjectIds.has(source.activeProjectId) ? source.activeProjectId : (projects[0]?.id || null),
       selectedOrderId: source.selectedOrderId || null,
       projects,
       parts,
       orders,
+      stockPallets,
+      dismissedNotices: source.dismissedNotices && typeof source.dismissedNotices === 'object' ? { ...source.dismissedNotices } : {},
       activity: Array.isArray(source.activity) ? source.activity : []
     };
   }
@@ -235,25 +258,29 @@
 
   const els = {
     sidebar: $('.sidebar'), menuBtn: $('#menuBtn'), pageTitle: $('#pageTitle'), pageEyebrow: $('#pageEyebrow'),
-    alertBar: $('#alertBar'), storageNotice: $('#storageNotice'),
+    alertBar: $('#alertBar'), storageNotice: $('#storageNotice'), inventoryNote: $('#inventoryNote'),
     statProjects: $('#statProjects'), statParts: $('#statParts'), statLow: $('#statLow'), statOut: $('#statOut'), dashboardProjectName: $('#dashboardProjectName'),
     categoryProgress: $('#categoryProgress'), activityList: $('#activityList'),
     projectCards: $('#projectCards'), newProjectBtn: $('#newProjectBtn'),
     inventorySearch: $('#inventorySearch'), inventoryProjectFilter: $('#inventoryProjectFilter'), inventoryStockFilter: $('#inventoryStockFilter'), inventorySort: $('#inventorySort'),
     addPartBtn: $('#addPartBtn'), inventoryTableBody: $('#inventoryTableBody'), inventoryEmpty: $('#inventoryEmpty'), inventoryCards: $('#inventoryCards'),
     orderSelect: $('#orderSelect'), newOrderBtn: $('#newOrderBtn'), deleteOrderBtn: $('#deleteOrderBtn'), orderSummary: $('#orderSummary'), orderBoards: $('#orderBoards'),
+    newStockPalletBtn: $('#newStockPalletBtn'), stockSummary: $('#stockSummary'), stockSearch: $('#stockSearch'), stockSearchInfo: $('#stockSearchInfo'), stockPalletGrid: $('#stockPalletGrid'),
     exportBtn: $('#exportBtn'), importInput: $('#importInput'), resetBtn: $('#resetBtn'),
     projectDialog: $('#projectDialog'), projectForm: $('#projectForm'), projectDialogTitle: $('#projectDialogTitle'), projectPhotoInput: $('#projectPhotoInput'),
     projectPhotoPreview: $('#projectPhotoPreview'), removeProjectPhotoBtn: $('#removeProjectPhotoBtn'),
     projectPartsDialog: $('#projectPartsDialog'), projectPartsForm: $('#projectPartsForm'), projectPartsTitle: $('#projectPartsTitle'), projectPartsSearch: $('#projectPartsSearch'), projectPartsList: $('#projectPartsList'),
     partDialog: $('#partDialog'), partForm: $('#partForm'), partDialogTitle: $('#partDialogTitle'), partProjectCheckboxes: $('#partProjectCheckboxes'), partDuplicateWarning: $('#partDuplicateWarning'),
     orderDialog: $('#orderDialog'), orderForm: $('#orderForm'), orderItemDialog: $('#orderItemDialog'), orderItemForm: $('#orderItemForm'), availabilityHint: $('#availabilityHint'),
+    stockPalletDialog: $('#stockPalletDialog'), stockPalletForm: $('#stockPalletForm'), stockPalletDialogTitle: $('#stockPalletDialogTitle'),
+    stockItemDialog: $('#stockItemDialog'), stockItemForm: $('#stockItemForm'), stockPartSearch: $('#stockPartSearch'), stockPartOptions: $('#stockPartOptions'), stockPartMatchHint: $('#stockPartMatchHint'), stockUnknownPart: $('#stockUnknownPart'), createStockMasterPartBtn: $('#createStockMasterPartBtn'),
+    stockPalletDetailDialog: $('#stockPalletDetailDialog'), stockPalletDetailTitle: $('#stockPalletDetailTitle'), stockPalletDetailMeta: $('#stockPalletDetailMeta'), stockPalletItems: $('#stockPalletItems'), deleteStockPalletBtn: $('#deleteStockPalletBtn'), editStockPalletBtn: $('#editStockPalletBtn'), addStockPalletItemBtn: $('#addStockPalletItemBtn'),
     photoDialog: $('#photoDialog'), photoDialogTitle: $('#photoDialogTitle'), expandedProjectPhoto: $('#expandedProjectPhoto'), toast: $('#toast')
   };
 
   const viewMeta = {
     dashboard: ['Dashboard', 'OVERVIEW'], projects: ['Projects', 'WORKSPACES'], inventory: ['Inventory', 'MASTER STOCK'],
-    orders: ['Assembly orders', 'PALLET BUILDING'], settings: ['Data & settings', 'WORKSPACE']
+    orders: ['Assembly orders', 'PALLET BUILDING'], stock: ['Stock', 'AT THE STORE'], settings: ['Data & settings', 'WORKSPACE']
   };
 
   function saveState() {
@@ -318,6 +345,19 @@
     return { key: 'healthy', label: 'In stock' };
   }
 
+  function getStockPallet(id) {
+    return state.stockPallets.find(pallet => pallet.id === id) || null;
+  }
+
+  function storedQuantityForPart(partId) {
+    return state.stockPallets.reduce((total, pallet) => total + pallet.items.filter(item => item.partId === partId).reduce((sum, item) => sum + item.quantity, 0), 0);
+  }
+
+  function partIdentityMarkup(part) {
+    if (!part) return '<strong class="part-name">Deleted master part</strong>';
+    return `<span class="part-code part-code-badge">${esc(part.code)}</span><strong class="part-name">${esc(part.name)}</strong>`;
+  }
+
   function assemblyLabel(part) {
     return part.assemblyPosition && part.assemblyTotal ? `${part.assemblyPosition}/${part.assemblyTotal}` : '—';
   }
@@ -339,6 +379,7 @@
     els.sidebar.classList.remove('open');
     if (view === 'inventory') renderInventory();
     if (view === 'orders') renderOrders();
+    if (view === 'stock') renderStock();
   }
 
   function ensureValidSelections() {
@@ -354,7 +395,9 @@
     renderProjects();
     renderInventory();
     renderOrders();
+    renderStock();
     renderAlertBar();
+    renderInventoryNotice();
     saveState();
   }
 
@@ -375,15 +418,32 @@
     const parts = state.parts;
     const low = parts.filter(part => part.quantity > 0 && part.quantity <= 4).length;
     const out = parts.filter(part => part.quantity <= 0).length;
+    const signature = `${out}:${low}`;
     if (!low && !out) {
+      els.alertBar.classList.add('hidden');
+      return;
+    }
+    if (state.dismissedNotices.stockAlertSignature === signature) {
       els.alertBar.classList.add('hidden');
       return;
     }
     const messages = [];
     if (out) messages.push(`${out} out of stock`);
     if (low) messages.push(`${low} low stock`);
-    els.alertBar.textContent = `⚠ Master inventory: ${messages.join(' and ')}. Tap a stock card below to review the complete list.`;
+    els.alertBar.innerHTML = `<span>⚠ Master inventory: ${messages.join(' and ')}. Tap a stock card below to review the complete list.</span><button type="button" class="notice-close" data-dismiss-notice="stock-alert" data-signature="${signature}" aria-label="Close master inventory warning">×</button>`;
     els.alertBar.classList.remove('hidden');
+  }
+
+  function renderInventoryNotice() {
+    els.inventoryNote.classList.toggle('hidden', Boolean(state.dismissedNotices.inventoryInfo));
+  }
+
+  function dismissNotice(key, signature = '') {
+    if (key === 'inventory-info') state.dismissedNotices.inventoryInfo = true;
+    if (key === 'stock-alert') state.dismissedNotices.stockAlertSignature = signature;
+    renderAlertBar();
+    renderInventoryNotice();
+    saveState();
   }
 
   function renderDashboard() {
@@ -454,7 +514,8 @@
       const matchesStock = stockFilter === 'all'
         || (stockFilter === 'low' && part.quantity > 0 && part.quantity <= 4)
         || (stockFilter === 'out' && part.quantity <= 0)
-        || (stockFilter === 'healthy' && part.quantity >= 5);
+        || (stockFilter === 'healthy' && part.quantity >= 5)
+        || (stockFilter === 'overflowing' && part.overflowing);
       return matchesQuery && matchesProject && matchesStock;
     });
 
@@ -478,28 +539,31 @@
     const parts = getFilteredInventory();
     els.inventoryTableBody.innerHTML = parts.map(part => {
       const status = stockStatus(part.quantity);
+      const storedQuantity = storedQuantityForPart(part.id);
       return `<tr>
-        <td><span class="part-code">${esc(part.code)}</span></td>
-        <td><strong>${esc(part.name)}</strong>${part.notes ? `<br><small class="muted">${esc(part.notes)}</small>` : ''}</td>
+        <td><span class="part-code part-code-badge">${esc(part.code)}</span></td>
+        <td><strong class="part-name table-part-name">${esc(part.name)}</strong>${part.notes ? `<br><small class="muted">${esc(part.notes)}</small>` : ''}</td>
         <td>${esc(dimensionLabel(part))}</td>
         <td><span class="assembly-badge">${esc(assemblyLabel(part))}</span></td>
         <td>${esc(part.category)}</td>
         <td><div class="project-chip-row">${projectChips(part, 2)}</div></td>
         <td><div class="stock-control"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="Reduce shared quantity">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="Increase shared quantity">+</button></div></td>
-        <td><span class="status ${status.key}">${status.label}</span></td>
-        <td><div class="row-actions"><button type="button" data-action="edit" data-id="${esc(part.id)}">Edit</button><button type="button" data-action="delete" data-id="${esc(part.id)}">Delete</button></div></td>
+        <td><strong>${storedQuantity}</strong></td>
+        <td><div class="status-stack"><span class="status ${status.key}">${status.label}</span>${part.overflowing ? '<span class="status overflowing">Overflowing</span>' : ''}</div></td>
+        <td><div class="row-actions"><button type="button" class="${part.overflowing ? 'overflow-active' : ''}" data-action="overflow" data-id="${esc(part.id)}">${part.overflowing ? 'Space available' : 'Mark overflowing'}</button><button type="button" data-action="edit" data-id="${esc(part.id)}">Edit</button><button type="button" data-action="delete" data-id="${esc(part.id)}">Delete</button></div></td>
       </tr>`;
     }).join('');
     els.inventoryEmpty.classList.toggle('hidden', parts.length > 0);
 
     els.inventoryCards.innerHTML = parts.length ? parts.map(part => {
       const status = stockStatus(part.quantity);
+      const storedQuantity = storedQuantityForPart(part.id);
       return `<article class="inventory-card">
-        <div class="inventory-card-head"><div><span class="part-code">${esc(part.code)}</span><h3>${esc(part.name)}</h3></div><span class="status ${status.key}">${status.label}</span></div>
-        <div class="inventory-card-meta"><span class="meta-chip">${esc(part.category)}</span><span class="meta-chip">Size: ${esc(dimensionLabel(part))}</span><span class="meta-chip">Assembly: ${esc(assemblyLabel(part))}</span>${part.notes ? `<span class="meta-chip">${esc(part.notes)}</span>` : ''}</div>
+        <div class="inventory-card-head"><div class="part-identity-stack">${partIdentityMarkup(part)}</div><div class="status-stack"><span class="status ${status.key}">${status.label}</span>${part.overflowing ? '<span class="status overflowing">Overflowing</span>' : ''}</div></div>
+        <div class="inventory-card-meta"><span class="meta-chip">${esc(part.category)}</span><span class="meta-chip">Size: ${esc(dimensionLabel(part))}</span><span class="meta-chip">Assembly: ${esc(assemblyLabel(part))}</span><span class="meta-chip store-chip">${storedQuantity} at store</span>${part.notes ? `<span class="meta-chip">${esc(part.notes)}</span>` : ''}</div>
         <div class="project-chip-row card-projects">${projectChips(part, 4)}</div>
         <div class="shared-stock-label">Shared quantity across every linked project</div>
-        <div class="inventory-card-bottom"><div class="stock-control large"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="Reduce shared quantity">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="Increase shared quantity">+</button></div><div class="row-actions"><button type="button" data-action="edit" data-id="${esc(part.id)}">Edit</button><button type="button" data-action="delete" data-id="${esc(part.id)}">Delete</button></div></div>
+        <div class="inventory-card-bottom"><div class="stock-control large"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="Reduce shared quantity">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="Increase shared quantity">+</button></div><div class="row-actions"><button type="button" class="${part.overflowing ? 'overflow-active' : ''}" data-action="overflow" data-id="${esc(part.id)}">${part.overflowing ? 'Space available' : 'Overflowing'}</button><button type="button" data-action="edit" data-id="${esc(part.id)}">Edit</button><button type="button" data-action="delete" data-id="${esc(part.id)}">Delete</button></div></div>
       </article>`;
     }).join('') : '<div class="empty-state"><strong>No parts match these filters.</strong><span>Add a master part or change the filters.</span></div>';
   }
@@ -544,7 +608,7 @@
         const stockText = item.packed ? 'Packed on pallet; shared stock deducted' : `${available} in shared stock${metadata ? ` · ${metadata}` : ''}`;
         return `<div class="check-item ${item.packed ? 'packed' : ''}">
           <input type="checkbox" data-action="toggle-pack" data-item-id="${esc(item.id)}" ${item.packed ? 'checked' : ''} ${!part ? 'disabled' : ''} />
-          <div class="part-label"><strong>${esc(codeName)}</strong><span>${esc(stockText)}</span></div>
+          <div class="part-label"><div class="part-identity-inline">${partIdentityMarkup(part)}</div><span>${esc(stockText)}</span></div>
           <label class="needed-editor ${insufficient ? 'short' : ''}">
             <span>Needed</span>
             <input type="number" min="1" step="1" inputmode="numeric" value="${item.quantityNeeded}" data-action="edit-needed" data-item-id="${esc(item.id)}" aria-label="Needed quantity for ${esc(codeName)}" ${!part ? 'disabled' : ''} />
@@ -554,6 +618,133 @@
       }).join('') : '<div class="column-empty">No parts added to this section.</div>';
       return `<article class="order-column"><div class="order-column-head"><h3>${category}</h3><button data-action="add-order-item" data-category="${category}">+ Add part</button></div><div class="checklist">${itemHtml}</div></article>`;
     }).join('');
+  }
+
+  function renderStock() {
+    const query = els.stockSearch.value.trim().toLowerCase();
+    const pallets = [...state.stockPallets]
+      .filter(pallet => {
+        const partText = pallet.items.map(item => {
+          const part = state.parts.find(candidate => candidate.id === item.partId);
+          return part ? [part.code, part.name, part.category, dimensionLabel(part), assemblyLabel(part)].join(' ') : '';
+        }).join(' ');
+        return !query || [pallet.deliveryNumber, pallet.palletNumber, pallet.notes, partText].join(' ').toLowerCase().includes(query);
+      })
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const storedUnits = state.stockPallets.reduce((sum, pallet) => sum + pallet.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
+    const distinctParts = new Set(state.stockPallets.flatMap(pallet => pallet.items.map(item => item.partId))).size;
+    els.stockSummary.innerHTML = `<div class="summary-chip"><span>Stored pallets</span><strong>${state.stockPallets.length}</strong></div><div class="summary-chip"><span>Different parts</span><strong>${distinctParts}</strong></div><div class="summary-chip"><span>Units at store</span><strong>${storedUnits}</strong></div>`;
+    els.stockSearchInfo.textContent = query ? `${pallets.length} matching pallet${pallets.length === 1 ? '' : 's'}` : '';
+
+    els.stockPalletGrid.innerHTML = pallets.length ? pallets.map(pallet => {
+      const units = pallet.items.reduce((sum, item) => sum + item.quantity, 0);
+      const preview = pallet.items.slice(0, 3).map(item => {
+        const part = state.parts.find(candidate => candidate.id === item.partId);
+        return `<div class="stock-card-part"><div>${partIdentityMarkup(part)}</div><strong>×${item.quantity}</strong></div>`;
+      }).join('');
+      const overflowCount = pallet.items.filter(item => state.parts.find(part => part.id === item.partId)?.overflowing).length;
+      return `<article class="stock-pallet-card">
+        <div class="stock-pallet-card-head"><div><span class="delivery-label">Delivery ${esc(pallet.deliveryNumber)}</span><h3>Pallet ${esc(pallet.palletNumber)}</h3></div><span class="pallet-unit-count">${units}</span></div>
+        <div class="stock-pallet-meta"><span>${pallet.items.length} part lines</span><span>${units} units</span>${overflowCount ? `<span class="overflow-text">${overflowCount} overflowing</span>` : ''}</div>
+        <div class="stock-card-parts">${preview || '<span class="muted">No parts added yet.</span>'}${pallet.items.length > 3 ? `<small>+${pallet.items.length - 3} more</small>` : ''}</div>
+        ${pallet.notes ? `<p class="stock-pallet-note">${esc(pallet.notes)}</p>` : ''}
+        <button class="secondary stock-pallet-open" data-pallet-id="${esc(pallet.id)}" type="button">Open pallet</button>
+      </article>`;
+    }).join('') : `<div class="empty-state panel stock-empty"><strong>${query ? 'No pallets contain that part.' : 'No stored pallets yet.'}</strong><span>${query ? 'Try another code or part name.' : 'Create a pallet using its delivery and pallet numbers.'}</span></div>`;
+  }
+
+  function openStockPalletDialog(pallet = null) {
+    els.stockPalletForm.reset();
+    $('[name="id"]', els.stockPalletForm).value = pallet?.id || '';
+    $('[name="deliveryNumber"]', els.stockPalletForm).value = pallet?.deliveryNumber || '';
+    $('[name="palletNumber"]', els.stockPalletForm).value = pallet?.palletNumber || '';
+    $('[name="notes"]', els.stockPalletForm).value = pallet?.notes || '';
+    els.stockPalletDialogTitle.textContent = pallet ? 'Edit stored pallet' : 'Create a stored pallet';
+    closeDialog(els.stockPalletDetailDialog);
+    openDialog(els.stockPalletDialog);
+  }
+
+  function resolveStockPartSearch(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return null;
+    const matches = state.parts.filter(part => [part.code, part.name, `${part.code} — ${part.name}`].some(candidate => candidate.toLowerCase() === normalized));
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  function updateStockPartMatch() {
+    const pallet = getStockPallet($('[name="palletId"]', els.stockItemForm).value);
+    const raw = els.stockPartSearch.value.trim();
+    const part = resolveStockPartSearch(raw);
+    const alreadyAdded = part && pallet?.items.some(item => item.partId === part.id);
+    const submitButton = $('button[type="submit"]', els.stockItemForm);
+    $('[name="partId"]', els.stockItemForm).value = part && !alreadyAdded ? part.id : '';
+    els.stockPartMatchHint.className = 'availability-hint';
+    els.stockUnknownPart.classList.add('hidden');
+
+    if (!raw) {
+      els.stockPartMatchHint.textContent = 'Choose a master part. Stored quantities are tracked separately from received stock.';
+      submitButton.disabled = true;
+      return;
+    }
+    if (alreadyAdded) {
+      els.stockPartMatchHint.textContent = 'This part is already on the pallet. Edit its quantity in the pallet list.';
+      els.stockPartMatchHint.classList.add('warning');
+      submitButton.disabled = true;
+      return;
+    }
+    if (part) {
+      els.stockPartMatchHint.textContent = `${part.quantity} received · ${storedQuantityForPart(part.id)} already at store${part.overflowing ? ' · marked overflowing' : ''}.`;
+      if (part.overflowing) els.stockPartMatchHint.classList.add('warning');
+      submitButton.disabled = false;
+      return;
+    }
+    els.stockPartMatchHint.textContent = 'No exact Master Inventory match. Create this master part before adding it to the pallet.';
+    els.stockPartMatchHint.classList.add('warning');
+    els.stockUnknownPart.classList.remove('hidden');
+    submitButton.disabled = true;
+  }
+
+  function openStockItemDialog(palletId, preferredPartId = '') {
+    const pallet = getStockPallet(palletId);
+    if (!pallet) return;
+    els.stockItemForm.reset();
+    $('[name="palletId"]', els.stockItemForm).value = palletId;
+    $('[name="quantity"]', els.stockItemForm).value = 1;
+    const addedIds = new Set(pallet.items.map(item => item.partId));
+    const availableParts = state.parts.filter(part => !addedIds.has(part.id)).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+    els.stockPartOptions.innerHTML = availableParts.map(part => `<option value="${esc(part.code)} — ${esc(part.name)}" label="${part.quantity} received · ${storedQuantityForPart(part.id)} at store"></option>`).join('');
+    const preferred = state.parts.find(part => part.id === preferredPartId);
+    els.stockPartSearch.value = preferred ? `${preferred.code} — ${preferred.name}` : '';
+    closeDialog(els.stockPalletDetailDialog);
+    updateStockPartMatch();
+    openDialog(els.stockItemDialog);
+  }
+
+  function renderStockPalletDetail(palletId = openStockPalletId) {
+    const pallet = getStockPallet(palletId);
+    if (!pallet) {
+      openStockPalletId = null;
+      closeDialog(els.stockPalletDetailDialog);
+      return;
+    }
+    openStockPalletId = pallet.id;
+    const units = pallet.items.reduce((sum, item) => sum + item.quantity, 0);
+    els.stockPalletDetailTitle.textContent = `Delivery ${pallet.deliveryNumber} · Pallet ${pallet.palletNumber}`;
+    els.stockPalletDetailMeta.innerHTML = `<span class="meta-chip">${pallet.items.length} part lines</span><span class="meta-chip">${units} stored units</span><span class="meta-chip">Created ${esc(formatDate(pallet.createdAt))}</span>${pallet.notes ? `<span class="meta-chip detail-note">${esc(pallet.notes)}</span>` : ''}`;
+    els.stockPalletItems.innerHTML = pallet.items.length ? pallet.items.map(item => {
+      const part = state.parts.find(candidate => candidate.id === item.partId);
+      return `<div class="stock-detail-item">
+        <div class="stock-detail-part"><div class="part-identity-stack">${partIdentityMarkup(part)}</div><span>${part ? `${esc(part.category)} · ${esc(dimensionLabel(part))} · ${part.quantity} received · ${storedQuantityForPart(part.id)} total at store` : 'Master part unavailable'}</span>${part?.overflowing ? '<span class="status overflowing">Overflowing</span>' : ''}</div>
+        <label class="stored-quantity-editor"><span>On pallet</span><input type="number" min="1" step="1" inputmode="numeric" value="${item.quantity}" data-action="stock-edit-quantity" data-item-id="${esc(item.id)}" /></label>
+        <button class="remove-item" data-action="stock-remove-item" data-item-id="${esc(item.id)}" aria-label="Remove part from stored pallet" type="button">×</button>
+      </div>`;
+    }).join('') : '<div class="empty-state"><strong>No parts on this pallet.</strong><span>Add the first stored part below.</span></div>';
+  }
+
+  function openStockPalletDetail(palletId) {
+    renderStockPalletDetail(palletId);
+    openDialog(els.stockPalletDetailDialog);
   }
 
   function renderPartProjectCheckboxes(selectedIds = []) {
@@ -584,21 +775,24 @@
     return duplicate;
   }
 
-  function openPartDialog(part = null) {
+  function openPartDialog(part = null, defaults = {}) {
+    const source = part || defaults;
+    stockPartReturnPalletId = defaults.returnPalletId || null;
     els.partForm.reset();
     $('[name="id"]', els.partForm).value = part?.id || '';
-    $('[name="code"]', els.partForm).value = part?.code || '';
-    $('[name="name"]', els.partForm).value = part?.name || '';
-    $('[name="quantity"]', els.partForm).value = part?.quantity ?? 1;
-    const dimensions = dimensionsFromPart(part || {});
+    $('[name="code"]', els.partForm).value = source.code || '';
+    $('[name="name"]', els.partForm).value = source.name || '';
+    $('[name="quantity"]', els.partForm).value = source.quantity ?? 1;
+    const dimensions = dimensionsFromPart(source);
     $('[name="length"]', els.partForm).value = dimensions.length;
     $('[name="width"]', els.partForm).value = dimensions.width;
     $('[name="height"]', els.partForm).value = dimensions.height;
-    $('[name="category"]', els.partForm).value = part?.category || 'Desk';
-    $('[name="assemblyPosition"]', els.partForm).value = part?.assemblyPosition || '';
-    $('[name="assemblyTotal"]', els.partForm).value = part?.assemblyTotal || '';
-    $('[name="notes"]', els.partForm).value = part?.notes || '';
-    renderPartProjectCheckboxes(part?.projectIds || (state.activeProjectId ? [state.activeProjectId] : []));
+    $('[name="category"]', els.partForm).value = source.category || 'Desk';
+    $('[name="assemblyPosition"]', els.partForm).value = source.assemblyPosition || '';
+    $('[name="assemblyTotal"]', els.partForm).value = source.assemblyTotal || '';
+    $('[name="overflowing"]', els.partForm).checked = Boolean(source.overflowing);
+    $('[name="notes"]', els.partForm).value = source.notes || '';
+    renderPartProjectCheckboxes(source.projectIds || (state.activeProjectId ? [state.activeProjectId] : []));
     els.partDialogTitle.textContent = part ? 'Edit master part' : 'Add a master part';
     updatePartDuplicateWarning();
     openDialog(els.partDialog);
@@ -670,7 +864,7 @@
     els.projectPartsList.innerHTML = parts.length
       ? parts.map(part => {
         const size = dimensionLabel(part);
-        return `<label class="check-row"><input type="checkbox" value="${esc(part.id)}" ${projectPartsDraft.has(part.id) ? 'checked' : ''} /><span><strong>${esc(part.code)} — ${esc(part.name)}</strong><small>${esc(part.category)} · ${part.quantity} shared units${size !== '—' ? ` · ${esc(size)}` : ''}${assemblyLabel(part) !== '—' ? ` · ${esc(assemblyLabel(part))}` : ''}</small></span></label>`;
+        return `<label class="check-row"><input type="checkbox" value="${esc(part.id)}" ${projectPartsDraft.has(part.id) ? 'checked' : ''} /><span><span class="part-identity-inline">${partIdentityMarkup(part)}</span><small>${esc(part.category)} · ${part.quantity} received · ${storedQuantityForPart(part.id)} at store${size !== '—' ? ` · ${esc(size)}` : ''}${assemblyLabel(part) !== '—' ? ` · ${esc(assemblyLabel(part))}` : ''}</small></span></label>`;
       }).join('')
       : `<div class="checkbox-empty">${state.parts.length ? 'No master parts match this search.' : 'No master parts yet. Add them in Inventory first.'}</div>`;
     if (!projectId) closeDialog(els.projectPartsDialog);
@@ -805,11 +999,13 @@
     const part = state.parts.find(candidate => candidate.id === partId);
     if (!part) return;
     const referenced = state.orders.some(order => order.items.some(item => item.partId === partId));
-    const message = referenced
-      ? `Delete master part ${part.code} — ${part.name}? It will be removed from every linked project and assembly checklist. Packed quantities will not be restored because the master record is being deleted.`
+    const storedReferences = state.stockPallets.reduce((count, pallet) => count + pallet.items.filter(item => item.partId === partId).length, 0);
+    const message = referenced || storedReferences
+      ? `Delete master part ${part.code} — ${part.name}? It will be removed from every linked project and assembly checklist${storedReferences ? `, plus ${storedReferences} stored pallet line(s)` : ''}. Packed quantities will not be restored because the master record is being deleted.`
       : `Delete master part ${part.code} — ${part.name} from every project?`;
     if (!window.confirm(message)) return;
     state.orders.forEach(order => { order.items = order.items.filter(item => item.partId !== partId); });
+    state.stockPallets.forEach(pallet => { pallet.items = pallet.items.filter(item => item.partId !== partId); });
     state.parts = state.parts.filter(candidate => candidate.id !== partId);
     addActivity('Master part deleted', `${part.code} — ${part.name}`);
     renderAll();
@@ -824,6 +1020,62 @@
     part.quantity = next;
     addActivity('Shared stock quantity changed', `${part.code} is now ${part.quantity} in every linked project`);
     renderAll();
+  }
+
+  function togglePartOverflowing(partId) {
+    const part = state.parts.find(candidate => candidate.id === partId);
+    if (!part) return;
+    part.overflowing = !part.overflowing;
+    addActivity(part.overflowing ? 'Part marked overflowing' : 'Storage space restored', `${part.code} — ${part.name}`);
+    renderAll();
+    if (openStockPalletId) renderStockPalletDetail();
+    showToast(part.overflowing ? 'Part marked as overflowing.' : 'Part marked as having available space.');
+  }
+
+  function updateStockPalletItemQuantity(itemId, requestedQuantity) {
+    const pallet = getStockPallet(openStockPalletId);
+    const item = pallet?.items.find(candidate => candidate.id === itemId);
+    if (!item) return;
+    const numericQuantity = Number(requestedQuantity);
+    if (!Number.isFinite(numericQuantity) || numericQuantity < 1) {
+      showToast('Stored quantity must be at least 1.');
+      renderStockPalletDetail();
+      return;
+    }
+    const nextQuantity = Math.floor(numericQuantity);
+    if (nextQuantity === item.quantity) return;
+    const previousQuantity = item.quantity;
+    item.quantity = nextQuantity;
+    const part = state.parts.find(candidate => candidate.id === item.partId);
+    addActivity('Stored pallet quantity changed', `${part?.code || 'Part'}: ${previousQuantity} → ${nextQuantity} on Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
+    renderAll();
+    renderStockPalletDetail();
+    showToast('Stored quantity updated.');
+  }
+
+  function removeStockPalletItem(itemId) {
+    const pallet = getStockPallet(openStockPalletId);
+    const item = pallet?.items.find(candidate => candidate.id === itemId);
+    if (!item) return;
+    const part = state.parts.find(candidate => candidate.id === item.partId);
+    if (!window.confirm(`Remove ${part?.code || 'this part'} from Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}?`)) return;
+    pallet.items = pallet.items.filter(candidate => candidate.id !== itemId);
+    addActivity('Part removed from stored pallet', `${part?.code || 'Part'} from Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
+    renderAll();
+    renderStockPalletDetail();
+    showToast('Part removed from stored pallet.');
+  }
+
+  function deleteStockPallet(palletId) {
+    const pallet = getStockPallet(palletId);
+    if (!pallet) return;
+    if (!window.confirm(`Delete Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber} and all of its stored-part quantities?`)) return;
+    state.stockPallets = state.stockPallets.filter(candidate => candidate.id !== palletId);
+    addActivity('Stored pallet deleted', `Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
+    openStockPalletId = null;
+    closeDialog(els.stockPalletDetailDialog);
+    renderAll();
+    showToast('Stored pallet deleted.');
   }
 
   function togglePacked(itemId, shouldPack) {
@@ -904,10 +1156,25 @@
   els.menuBtn.addEventListener('click', () => els.sidebar.classList.toggle('open'));
   document.addEventListener('click', event => {
     if (window.innerWidth <= 820 && els.sidebar.classList.contains('open') && !els.sidebar.contains(event.target) && event.target !== els.menuBtn) els.sidebar.classList.remove('open');
+    const dismissButton = event.target.closest('[data-dismiss-notice]');
+    if (dismissButton) dismissNotice(dismissButton.dataset.dismissNotice, dismissButton.dataset.signature || '');
   });
   $$('.nav-item').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
   $$('[data-jump]').forEach(button => button.addEventListener('click', () => switchView(button.dataset.jump)));
-  $$('.close-dialog').forEach(button => button.addEventListener('click', () => closeDialog(button.closest('dialog'))));
+  $$('.close-dialog').forEach(button => button.addEventListener('click', () => {
+    const dialog = button.closest('dialog');
+    if (dialog === els.partDialog && stockPartReturnPalletId) {
+      const palletId = stockPartReturnPalletId;
+      stockPartReturnPalletId = null;
+      closeDialog(dialog);
+      openStockItemDialog(palletId);
+      return;
+    }
+    const returnToPallet = (dialog === els.stockItemDialog || dialog === els.stockPalletDialog) && openStockPalletId;
+    if (dialog === els.stockPalletDetailDialog) openStockPalletId = null;
+    closeDialog(dialog);
+    if (returnToPallet) openStockPalletDetail(openStockPalletId);
+  }));
   $$('[data-stock-filter]').forEach(button => button.addEventListener('click', () => {
     els.inventorySearch.value = '';
     els.inventoryProjectFilter.value = 'all';
@@ -918,6 +1185,10 @@
 
   els.addPartBtn.addEventListener('click', () => openPartDialog());
   els.newProjectBtn.addEventListener('click', () => openProjectDialog());
+  els.newStockPalletBtn.addEventListener('click', () => {
+    openStockPalletId = null;
+    openStockPalletDialog();
+  });
   els.newOrderBtn.addEventListener('click', () => {
     if (!state.activeProjectId) return showToast('Create a project first.');
     els.orderForm.reset();
@@ -1012,23 +1283,34 @@
       category: String(data.get('category') || 'Other'),
       assemblyPosition: position,
       assemblyTotal: total,
+      overflowing: data.get('overflowing') === 'on',
       notes: String(data.get('notes') || '').trim()
     };
     if (!payload.code || !payload.name) return;
 
     let removedItems = 0;
+    let savedPart = null;
     if (id) {
       const part = state.parts.find(candidate => candidate.id === id);
       if (!part) return;
       removedItems = setPartProjects(part, nextProjectIds);
       Object.assign(part, payload);
+      savedPart = part;
       addActivity('Master part updated', `${payload.code} — ${payload.name}`);
     } else {
-      state.parts.push({ id: uid('part'), ...payload, projectIds: [...new Set(nextProjectIds)] });
+      savedPart = { id: uid('part'), ...payload, projectIds: [...new Set(nextProjectIds)] };
+      state.parts.push(savedPart);
       addActivity('Master part added', `${payload.code} × ${payload.quantity}`);
     }
+    const returnPalletId = stockPartReturnPalletId;
+    stockPartReturnPalletId = null;
     closeDialog(els.partDialog);
     renderAll();
+    if (!id && returnPalletId && getStockPallet(returnPalletId)) {
+      openStockItemDialog(returnPalletId, savedPart.id);
+      showToast('Master part created. Now add its stored quantity to the pallet.');
+      return;
+    }
     showToast(removedItems ? `Part updated. ${removedItems} checklist item(s) were removed from unlinked projects.` : (id ? 'Master part updated everywhere.' : 'Master part added.'));
   });
 
@@ -1098,6 +1380,89 @@
   $('[name="partId"]', els.orderItemForm).addEventListener('change', updateAvailabilityHint);
   $('[name="quantityNeeded"]', els.orderItemForm).addEventListener('input', updateAvailabilityHint);
 
+  els.stockPalletForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const data = new FormData(els.stockPalletForm);
+    const id = String(data.get('id') || '');
+    const deliveryNumber = String(data.get('deliveryNumber') || '').trim();
+    const palletNumber = String(data.get('palletNumber') || '').trim();
+    const notes = String(data.get('notes') || '').trim();
+    if (!deliveryNumber || !palletNumber) return;
+    const duplicate = state.stockPallets.find(pallet => pallet.id !== id && pallet.deliveryNumber.toLowerCase() === deliveryNumber.toLowerCase() && pallet.palletNumber.toLowerCase() === palletNumber.toLowerCase());
+    if (duplicate) return showToast('That delivery and pallet number combination already exists.');
+
+    let pallet;
+    if (id) {
+      pallet = getStockPallet(id);
+      if (!pallet) return;
+      Object.assign(pallet, { deliveryNumber, palletNumber, notes });
+      addActivity('Stored pallet updated', `Delivery ${deliveryNumber}, Pallet ${palletNumber}`);
+    } else {
+      pallet = { id: uid('stock_pallet'), deliveryNumber, palletNumber, notes, createdAt: new Date().toISOString(), items: [] };
+      state.stockPallets.push(pallet);
+      addActivity('Stored pallet created', `Delivery ${deliveryNumber}, Pallet ${palletNumber}`);
+    }
+    openStockPalletId = pallet.id;
+    closeDialog(els.stockPalletDialog);
+    renderAll();
+    openStockPalletDetail(pallet.id);
+    showToast(id ? 'Stored pallet details updated.' : 'Stored pallet created. Add its parts next.');
+  });
+
+  els.stockPartSearch.addEventListener('input', updateStockPartMatch);
+  els.stockItemForm.addEventListener('submit', event => {
+    event.preventDefault();
+    const data = new FormData(els.stockItemForm);
+    const pallet = getStockPallet(String(data.get('palletId') || ''));
+    const part = state.parts.find(candidate => candidate.id === String(data.get('partId') || ''));
+    const quantity = Math.max(1, Math.floor(Number(data.get('quantity')) || 1));
+    if (!pallet || !part) return showToast('Choose an existing master part or create it first.');
+    if (pallet.items.some(item => item.partId === part.id)) return showToast('This part is already on the pallet. Edit its quantity in the pallet list.');
+    pallet.items.push({ id: uid('stock_item'), partId: part.id, quantity });
+    addActivity('Part added to stored pallet', `${part.code} × ${quantity}; Delivery ${pallet.deliveryNumber}, Pallet ${pallet.palletNumber}`);
+    openStockPalletId = pallet.id;
+    closeDialog(els.stockItemDialog);
+    renderAll();
+    openStockPalletDetail(pallet.id);
+    showToast(part.overflowing ? 'Part added. It is currently marked as overflowing.' : 'Part added to stored pallet.');
+  });
+
+  els.createStockMasterPartBtn.addEventListener('click', () => {
+    const palletId = $('[name="palletId"]', els.stockItemForm).value;
+    const raw = els.stockPartSearch.value.trim();
+    if (!palletId || !raw) return;
+    const separator = raw.indexOf(' — ');
+    const code = (separator >= 0 ? raw.slice(0, separator) : raw).trim().toUpperCase();
+    const name = separator >= 0 ? raw.slice(separator + 3).trim() : '';
+    closeDialog(els.stockItemDialog);
+    openPartDialog(null, { code, name, quantity: 0, returnPalletId: palletId });
+  });
+
+  els.stockSearch.addEventListener('input', renderStock);
+  els.stockPalletGrid.addEventListener('click', event => {
+    const button = event.target.closest('.stock-pallet-open');
+    if (button) openStockPalletDetail(button.dataset.palletId);
+  });
+
+  els.addStockPalletItemBtn.addEventListener('click', () => {
+    if (openStockPalletId) openStockItemDialog(openStockPalletId);
+  });
+  els.editStockPalletBtn.addEventListener('click', () => {
+    const pallet = getStockPallet(openStockPalletId);
+    if (pallet) openStockPalletDialog(pallet);
+  });
+  els.deleteStockPalletBtn.addEventListener('click', () => {
+    if (openStockPalletId) deleteStockPallet(openStockPalletId);
+  });
+  els.stockPalletItems.addEventListener('click', event => {
+    const button = event.target.closest('button[data-action="stock-remove-item"]');
+    if (button) removeStockPalletItem(button.dataset.itemId);
+  });
+  els.stockPalletItems.addEventListener('change', event => {
+    const input = event.target.closest('input[data-action="stock-edit-quantity"]');
+    if (input) updateStockPalletItemQuantity(input.dataset.itemId, input.value);
+  });
+
   els.projectCards.addEventListener('click', event => {
     const photoButton = event.target.closest('.project-photo-expand');
     const openButton = event.target.closest('.project-open');
@@ -1127,6 +1492,7 @@
     if (!button) return;
     if (button.dataset.action === 'minus') adjustPartQuantity(button.dataset.id, -1);
     if (button.dataset.action === 'plus') adjustPartQuantity(button.dataset.id, 1);
+    if (button.dataset.action === 'overflow') togglePartOverflowing(button.dataset.id);
     if (button.dataset.action === 'edit') openPartDialog(state.parts.find(part => part.id === button.dataset.id));
     if (button.dataset.action === 'delete') deletePart(button.dataset.id);
   }

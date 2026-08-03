@@ -29,12 +29,12 @@ for (const reference of expectedReferences) {
   }
 }
 
-const forbiddenHtml = ['id="activeProjectSelect"', 'id="quickAddBtn"', 'ATTENTION NEEDED', 'name="size"'];
+const forbiddenHtml = ['id="activeProjectSelect"', 'id="quickAddBtn"', 'ATTENTION NEEDED', 'name="size"', '<span>▦</span>', '<span>▣</span>', '<span>◫</span>'];
 for (const fragment of forbiddenHtml) {
   if (html.includes(fragment)) throw new Error(`index.html still contains removed interface: ${fragment}`);
 }
 
-const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"'];
+const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"'];
 for (const fragment of requiredHtml) {
   if (!html.includes(fragment)) throw new Error(`index.html is missing requested interface: ${fragment}`);
 }
@@ -57,6 +57,15 @@ if (!app.includes('partIdentityKey') || !app.includes('findDuplicateMasterPart')
 }
 if (app.includes('part.code.toUpperCase() === code')) {
   throw new Error('Master parts must not be treated as duplicates by code alone.');
+}
+if (!app.includes('stockPallets') || !app.includes('renderStock') || !app.includes('storedQuantityForPart') || !app.includes('openStockPalletDetail')) {
+  throw new Error('The undelivered Stock pallet workflow is missing.');
+}
+if (!app.includes('dismissNotice') || !app.includes('stockAlertSignature') || !app.includes('inventoryInfo')) {
+  throw new Error('Dismissible inventory notices are missing.');
+}
+if (!app.includes('togglePartOverflowing') || !app.includes("data.get('overflowing')")) {
+  throw new Error('Overflowing master-part support is missing.');
 }
 
 const manifest = JSON.parse(await readFile('manifest.webmanifest', 'utf8'));

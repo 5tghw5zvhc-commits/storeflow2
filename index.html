@@ -14,6 +14,14 @@
 
 <link href="manifest.webmanifest" rel="manifest"/><link href="src/styles.css" rel="stylesheet"/><link href="assets/icons/icon-192.png" rel="icon"/></head>
 <body>
+<svg aria-hidden="true" class="icon-sprite" focusable="false">
+<symbol id="icon-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5M9 21v-7h6v7"/></symbol>
+<symbol id="icon-projects" viewBox="0 0 24 24"><circle cx="8.5" cy="5" r="2"/><path d="m7.5 7-4 12M9.5 7l4 12M5.5 14h6"/><path d="m15 17 5.2-5.2 2 2L17 19l-3 .9z"/></symbol>
+<symbol id="icon-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4zM4 7v10l8 4 8-4V7M12 11v10"/></symbol>
+<symbol id="icon-orders" viewBox="0 0 24 24"><path d="M6 3h9l3 3v7M6 3v18h8"/><path d="M15 3v4h4M12 16l6-6 2 2-6 6-3 1z"/></symbol>
+<symbol id="icon-stock" viewBox="0 0 24 24"><path d="M3 19h18M5 19v-5h14v5M7 14V9h4v5M13 14V9h4v5M5 9V4h6v5M13 9V4h6v5"/></symbol>
+<symbol id="icon-data" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/><circle cx="12" cy="12" r="7"/></symbol>
+</svg>
 <div class="app-shell" id="appView">
 <aside class="sidebar">
 <div>
@@ -22,11 +30,12 @@
 <div><strong>StoreFlow</strong><span>Warehouse Tracker</span></div>
 </div>
 <nav aria-label="Main navigation" class="nav">
-<button class="nav-item active" data-view="dashboard"><span>▦</span> Dashboard</button>
-<button class="nav-item" data-view="projects"><span>▣</span> Projects</button>
-<button class="nav-item" data-view="inventory"><span>◫</span> Inventory</button>
-<button class="nav-item" data-view="orders"><span>✓</span> Assembly orders</button>
-<button class="nav-item" data-view="settings"><span>⚙</span> Data &amp; settings</button>
+<button class="nav-item active" data-view="dashboard"><svg class="nav-icon"><use href="#icon-home"/></svg> Dashboard</button>
+<button class="nav-item" data-view="projects"><svg class="nav-icon"><use href="#icon-projects"/></svg> Projects</button>
+<button class="nav-item" data-view="inventory"><svg class="nav-icon"><use href="#icon-box"/></svg> Inventory</button>
+<button class="nav-item" data-view="orders"><svg class="nav-icon"><use href="#icon-orders"/></svg> Assembly orders</button>
+<button class="nav-item" data-view="stock"><svg class="nav-icon"><use href="#icon-stock"/></svg> Stock pallets</button>
+<button class="nav-item" data-view="settings"><svg class="nav-icon"><use href="#icon-data"/></svg> Data &amp; settings</button>
 </nav>
 </div>
 <div class="sidebar-bottom">
@@ -66,7 +75,7 @@
 <div class="cards-grid" id="projectCards"></div>
 </section>
 <section class="view" id="inventoryView">
-<div class="inventory-note">Add every physical part once. Project filters only change which shared parts are displayed; the quantity always remains the same everywhere.</div>
+<div class="inventory-note notice-dismissible" id="inventoryNote"><span>Add every physical part once. Project filters only change which shared parts are displayed; the quantity always remains the same everywhere.</span><button aria-label="Close inventory information" class="notice-close" data-dismiss-notice="inventory-info" type="button">×</button></div>
 <div class="section-toolbar inventory-toolbar">
 <div class="search-wrap"><input id="inventorySearch" placeholder="Search code, name, measurements or assembly number" type="search"/></div>
 <div class="filter-row">
@@ -76,6 +85,7 @@
 <option value="low">Low stock (1–4)</option>
 <option value="out">Out of stock</option>
 <option value="healthy">Healthy stock (5+)</option>
+<option value="overflowing">Overflowing</option>
 </select>
 <select id="inventorySort">
 <option value="name">Sort: name</option>
@@ -88,7 +98,7 @@
 </div>
 <div class="table-wrap">
 <table>
-<thead><tr><th>Code</th><th>Part</th><th>Size</th><th>Assembly</th><th>Category</th><th>Projects</th><th>Quantity</th><th>Status</th><th></th></tr></thead>
+<thead><tr><th>Code</th><th>Part name</th><th>Size</th><th>Assembly</th><th>Category</th><th>Projects</th><th>Received</th><th>At store</th><th>Status</th><th></th></tr></thead>
 <tbody id="inventoryTableBody"></tbody>
 </table>
 <div class="empty-state hidden" id="inventoryEmpty"><strong>No parts match these filters.</strong><span>Add stock or change the selected filters.</span></div>
@@ -103,21 +113,31 @@
 <div class="order-summary" id="orderSummary"></div>
 <div class="order-grid" id="orderBoards"></div>
 </section>
+<section class="view" id="stockView">
+<div class="section-toolbar stock-toolbar">
+<div><p class="muted">Track undelivered pallets currently held at the store. These quantities remain separate from received master inventory.</p></div>
+<button class="primary" id="newStockPalletBtn">+ New pallet</button>
+</div>
+<div class="order-summary stock-summary" id="stockSummary"></div>
+<div class="stock-search-row"><input id="stockSearch" placeholder="Search a part, delivery number or pallet number" type="search"/><span class="stock-search-info" id="stockSearchInfo"></span></div>
+<div class="stock-pallet-grid" id="stockPalletGrid"></div>
+</section>
 <section class="view" id="settingsView">
 <div class="settings-grid">
 <article class="panel"><p class="eyebrow">BACKUP</p><h3>Export your data</h3><p class="muted">Download a complete JSON backup including project photos.</p><button class="primary" id="exportBtn">Export backup</button></article>
 <article class="panel"><p class="eyebrow">RESTORE</p><h3>Import a backup</h3><p class="muted">Replace the data on this device with a previous StoreFlow backup.</p><label class="secondary file-button">Choose backup file<input accept="application/json" hidden="" id="importInput" type="file"/></label></article>
-<article class="panel danger-panel"><p class="eyebrow">DANGER ZONE</p><h3>Reset local data</h3><p class="muted">Erase all projects, parts, photos and orders from this device.</p><button class="danger" id="resetBtn">Reset everything</button></article>
+<article class="panel danger-panel"><p class="eyebrow">DANGER ZONE</p><h3>Reset local data</h3><p class="muted">Erase all projects, parts, photos, orders and stored pallets from this device.</p><button class="danger" id="resetBtn">Reset everything</button></article>
 <article class="panel"><p class="eyebrow">SHARED STOCK MODEL</p><h3>One part, one quantity</h3><p class="muted">A part can be assigned to multiple projects. Changing its quantity in any view changes the same master record everywhere.</p></article>
 </div>
 </section>
 </main>
 <nav aria-label="Mobile navigation" class="bottom-nav">
-<button class="nav-item active" data-view="dashboard" type="button"><span>▦</span><small>Home</small></button>
-<button class="nav-item" data-view="projects" type="button"><span>▣</span><small>Projects</small></button>
-<button class="nav-item" data-view="inventory" type="button"><span>◫</span><small>Stock</small></button>
-<button class="nav-item" data-view="orders" type="button"><span>✓</span><small>Orders</small></button>
-<button class="nav-item" data-view="settings" type="button"><span>⚙</span><small>Data</small></button>
+<button class="nav-item active" data-view="dashboard" type="button"><svg class="nav-icon"><use href="#icon-home"/></svg><small>Home</small></button>
+<button class="nav-item" data-view="projects" type="button"><svg class="nav-icon"><use href="#icon-projects"/></svg><small>Projects</small></button>
+<button class="nav-item" data-view="inventory" type="button"><svg class="nav-icon"><use href="#icon-box"/></svg><small>Inventory</small></button>
+<button class="nav-item" data-view="orders" type="button"><svg class="nav-icon"><use href="#icon-orders"/></svg><small>Orders</small></button>
+<button class="nav-item" data-view="stock" type="button"><svg class="nav-icon"><use href="#icon-stock"/></svg><small>Stock</small></button>
+<button class="nav-item" data-view="settings" type="button"><svg class="nav-icon"><use href="#icon-data"/></svg><small>Data</small></button>
 </nav>
 </div>
 <dialog id="projectDialog">
@@ -154,6 +174,7 @@
 <label>Shared quantity<input inputmode="numeric" min="0" name="quantity" required="" type="number" value="1"/></label>
 </div>
 <label>Part name<input name="name" placeholder="e.g. Kick Board" required=""/></label>
+<label class="toggle-row"><input name="overflowing" type="checkbox"/><span><strong>Mark as overflowing</strong><small>Use when there is no storage space for additional units.</small></span></label>
 <fieldset class="dimensions-fieldset">
 <legend>Size / dimensions (mm)</legend>
 <div class="dimensions-fields">
@@ -197,6 +218,37 @@
 <div class="availability-hint" id="availabilityHint"></div>
 <div class="modal-actions"><button class="secondary close-dialog" type="button">Cancel</button><button class="primary" type="submit">Add to checklist</button></div>
 </form>
+</dialog>
+<dialog id="stockPalletDialog">
+<form class="modal-form" id="stockPalletForm" method="dialog">
+<div class="modal-head"><div><p class="eyebrow">STORE STOCK</p><h3 id="stockPalletDialogTitle">Create a stored pallet</h3></div><button class="icon-button close-dialog" type="button">×</button></div>
+<input name="id" type="hidden"/>
+<label>Delivery number<input name="deliveryNumber" placeholder="e.g. DEL-1048" required=""/></label>
+<label>Pallet number<input name="palletNumber" placeholder="e.g. 03" required=""/></label>
+<label>Notes<textarea name="notes" placeholder="Optional store location or details" rows="3"></textarea></label>
+<div class="modal-actions"><button class="secondary close-dialog" type="button">Cancel</button><button class="primary" type="submit">Save pallet</button></div>
+</form>
+</dialog>
+<dialog id="stockItemDialog">
+<form class="modal-form" id="stockItemForm" method="dialog">
+<div class="modal-head"><div><p class="eyebrow">PALLET CONTENTS</p><h3>Add a stored part</h3></div><button class="icon-button close-dialog" type="button">×</button></div>
+<input name="palletId" type="hidden"/>
+<input name="partId" type="hidden"/>
+<label>Part code or name<input autocomplete="off" id="stockPartSearch" list="stockPartOptions" placeholder="Start typing a code or part name" required=""/></label>
+<datalist id="stockPartOptions"></datalist>
+<label>Quantity on this pallet<input inputmode="numeric" min="1" name="quantity" required="" type="number" value="1"/></label>
+<div class="availability-hint" id="stockPartMatchHint"></div>
+<div class="unknown-part-prompt hidden" id="stockUnknownPart"><span>This part is not in Master Inventory.</span><button class="secondary" id="createStockMasterPartBtn" type="button">Create master part</button></div>
+<div class="modal-actions"><button class="secondary close-dialog" type="button">Cancel</button><button class="primary" type="submit">Add to pallet</button></div>
+</form>
+</dialog>
+<dialog class="stock-detail-dialog" id="stockPalletDetailDialog">
+<div class="stock-detail-content">
+<div class="modal-head"><div><p class="eyebrow">STORE PALLET</p><h3 id="stockPalletDetailTitle">Pallet</h3></div><button class="icon-button close-dialog" type="button">×</button></div>
+<div class="stock-detail-meta" id="stockPalletDetailMeta"></div>
+<div class="stock-pallet-items" id="stockPalletItems"></div>
+<div class="modal-actions stock-detail-actions"><button class="danger ghost" id="deleteStockPalletBtn" type="button">Delete</button><button class="secondary" id="editStockPalletBtn" type="button">Edit details</button><button class="primary" id="addStockPalletItemBtn" type="button">+ Add part</button></div>
+</div>
 </dialog>
 <dialog class="photo-dialog" id="photoDialog">
 <div class="photo-dialog-content">

@@ -9,6 +9,11 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - Shared quantity updates across **All parts** and every linked project.
 - Part code, name, category, separate length/width/height measurements, assembly position such as `2/5`, notes and quantity.
 - Live duplicate warnings use the exact combination of part code, part number and total parts; the same code remains valid when either numbering value differs.
+- Dismissible master-inventory warnings and information banners.
+- Mark parts as overflowing when no additional storage space is available.
+- A separate Stock area for undelivered store pallets, identified by delivery and pallet number.
+- Search stored pallets by part, edit pallet quantities directly, and create missing master parts from the pallet workflow.
+- Master Inventory shows received quantities alongside totals still held at the store.
 - Create, rename and delete projects.
 - Upload, replace, remove and expand a project photo.
 - Link and unlink existing master parts from a project.
@@ -18,7 +23,7 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - Packing an order item deducts it from master stock; unpacking restores it.
 - Low-stock warnings at four units or fewer and out-of-stock warnings at zero.
 - Open filtered low-stock and out-of-stock lists directly from the dashboard cards.
-- JSON backup export and restore.
+- JSON backup export and restore, including stored pallets and overflow status.
 - iPhone Home Screen installation and offline app-shell support.
 
 ## Project structure
