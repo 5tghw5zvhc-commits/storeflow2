@@ -5,6 +5,9 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 ## Version 1 features
 
 - A master inventory where every physical part has one shared quantity.
+- Clean expandable inventory cards: code, name, assembly, quantity and overflowing switch remain visible, while category, dimensions, store quantity, notes and project links open on a single tap.
+- Part-code colours replace text status badges: green for in stock, yellow for low stock and red for out of stock; Edit and Delete live in each card's three-dot menu.
+- Category filtering and a floating add-part control keep the Inventory toolbar compact.
 - Link the same part to multiple projects without duplicating stock.
 - Shared quantity updates across **All parts** and every linked project.
 - Part code, name, category, separate length/width/height measurements, assembly position such as `2/5`, notes and quantity.
@@ -13,6 +16,7 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - Mark parts as overflowing when no additional storage space is available.
 - A separate Stock area for undelivered store pallets, identified by delivery and pallet number.
 - Persistent interface languages: English, Ukrainian, Russian and Polish.
+- Tabbed Settings separate preferences, data management and concise explanations of StoreFlow's shared-stock, checklist, pallet-planning and iPhone-storage rules.
 - Search for several required parts at once and receive an optimized pallet set that avoids overflowing stock first, consolidates required parts onto fewer pallets, and minimizes unrelated stock.
 - Recommendation cards identify primary and additional pallets, explain their requested-part coverage, and warn when an unavoidable pallet contains overflowing items.
 - Edit stored-pallet quantities directly and create missing master parts from the pallet workflow.

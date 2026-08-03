@@ -417,7 +417,60 @@ button { touch-action: manipulation; }
   font-weight: 700;
 }
 .bottom-nav { display: none; }
-.inventory-cards { display: none; }
+.inventory-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; }
+.inventory-card { position: relative; min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: var(--panel); box-shadow: 0 7px 22px rgba(24,59,52,.05); cursor: pointer; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+.inventory-card:hover { border-color: #bad5d0; box-shadow: 0 10px 28px rgba(24,59,52,.08); }
+.inventory-card:focus-visible { outline: 3px solid rgba(15,118,110,.18); outline-offset: 2px; }
+.inventory-card.expanded { border-color: #8fc6bd; box-shadow: 0 10px 30px rgba(15,118,110,.10); }
+.inventory-card-head { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px; }
+.inventory-card-identity { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.inventory-card-identity .part-name { font-size: 15px; overflow-wrap: anywhere; }
+.assembly-persistent { color: var(--muted); font-size: 10px; line-height: 1.3; font-weight: 800; }
+.part-code-badge.code-status-healthy { border-color: #80c292; background: #e7f7ec; color: #176436; }
+.part-code-badge.code-status-low { border-color: #e2bd69; background: #fff5d9; color: #805b11; }
+.part-code-badge.code-status-out { border-color: #e28f87; background: #ffebe9; color: var(--danger); }
+.inventory-menu-toggle { width: 36px; height: 34px; display: grid; place-items: center; padding: 0 0 5px; border: 0; border-radius: 10px; background: #f1f5f4; color: #50635f; font-size: 24px; line-height: 1; font-weight: 900; }
+.inventory-menu-toggle[aria-expanded="true"] { background: var(--brand-soft); color: var(--brand-dark); }
+.inventory-card-menu { position: absolute; top: 40px; right: 0; z-index: 30; min-width: 144px; display: none; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: white; box-shadow: 0 14px 34px rgba(11,39,34,.18); }
+.inventory-card-menu.open { display: grid; }
+.inventory-card-menu button { width: 100%; min-height: 40px; padding: 9px 11px; border: 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; font-size: 12px; font-weight: 800; }
+.inventory-card-menu button:hover { background: #f2f6f5; }
+.inventory-card-menu .danger-option { color: var(--danger); }
+.inventory-card-details { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.inventory-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.inventory-detail { min-width: 0; display: grid; align-content: start; gap: 5px; padding: 10px; border-radius: 11px; background: #f6f9f8; }
+.inventory-detail > span { color: var(--muted); font-size: 9px; line-height: 1.3; font-weight: 900; letter-spacing: .045em; text-transform: uppercase; }
+.inventory-detail > strong { font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.inventory-detail.detail-wide { grid-column: 1 / -1; }
+.inventory-detail .project-chip-row { margin-top: 1px; }
+.inventory-detail .meta-chip { background: white; }
+.inventory-card-bottom { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.inventory-quantity { display: grid; gap: 7px; }
+.inventory-control-label { color: var(--muted); font-size: 9px; line-height: 1.2; font-weight: 900; letter-spacing: .045em; text-transform: uppercase; }
+.inventory-card .stock-control button { width: 38px; height: 38px; }
+.overflow-switch { position: relative; display: flex; flex-direction: row; align-items: center; gap: 9px; min-height: 38px; color: var(--text); font-size: 11px; font-weight: 850; cursor: pointer; }
+.overflow-switch input { position: absolute; width: 1px; min-height: 1px; height: 1px; padding: 0; opacity: 0; pointer-events: none; }
+.switch-track { position: relative; width: 44px; height: 25px; flex: 0 0 44px; border-radius: 999px; background: #cbd6d3; box-shadow: inset 0 0 0 1px rgba(23,49,44,.08); transition: background .18s ease; }
+.switch-thumb { position: absolute; width: 19px; height: 19px; left: 3px; top: 3px; border-radius: 50%; background: white; box-shadow: 0 2px 5px rgba(15,42,37,.28); transition: transform .18s ease; }
+.overflow-switch input:checked + .switch-track { background: var(--brand); }
+.overflow-switch input:checked + .switch-track .switch-thumb { transform: translateX(19px); }
+.overflow-switch:focus-within .switch-track { box-shadow: 0 0 0 3px rgba(15,118,110,.16); }
+.inventory-fab { position: fixed; right: 24px; bottom: 24px; z-index: 90; width: 50px; height: 50px; display: grid; place-items: center; padding: 0; border: 3px solid rgba(255,255,255,.9); border-radius: 50%; background: var(--brand); color: white; box-shadow: 0 10px 25px rgba(10,92,86,.30); font-size: 29px; font-weight: 500; line-height: 1; }
+.inventory-fab:hover { background: var(--brand-dark); transform: translateY(-2px); }
+.inventory-fab span { transform: translateY(-1px); }
+
+.settings-tabs { display: flex; gap: 6px; width: max-content; max-width: 100%; margin-bottom: 16px; padding: 5px; border: 1px solid var(--line); border-radius: 14px; background: #eaf0ee; overflow-x: auto; }
+.settings-tabs button { min-height: 40px; padding: 8px 13px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); white-space: nowrap; font-size: 12px; font-weight: 850; }
+.settings-tabs button.active { background: white; color: var(--brand-dark); box-shadow: 0 3px 10px rgba(24,59,52,.09); }
+.settings-grid-single { grid-template-columns: minmax(0, 620px); }
+.tips-heading { max-width: 720px; margin: 3px 0 16px; }
+.tips-heading h3 { margin: 0; font-size: 22px; }
+.tips-heading p:last-child { margin: 7px 0 0; font-size: 13px; }
+.tips-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.tip-card { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 15px; background: white; }
+.tip-icon { width: 35px; height: 35px; padding: 7px; border-radius: 10px; background: var(--brand-soft); color: var(--brand); fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tip-card h3 { margin: 1px 0 6px; font-size: 14px; }
+.tip-card p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
 
 /* Fallback for browsers that do not implement dialog.showModal() */
 dialog[open] { display: block; }
@@ -440,6 +493,8 @@ body.dialog-open::after {
 @media (max-width: 820px) {
   body { padding-bottom: calc(74px + env(safe-area-inset-bottom)); }
   .main { padding-bottom: 30px; }
+  .inventory-cards, .tips-grid { grid-template-columns: 1fr; }
+  .inventory-fab { right: 17px; bottom: calc(84px + env(safe-area-inset-bottom)); }
   .sidebar, #menuBtn { display: none !important; }
   .bottom-nav {
     position: fixed;
@@ -505,6 +560,11 @@ body.dialog-open::after {
   .inventory-card .stock-control button { width: 40px; height: 40px; }
   .inventory-card .row-actions button { min-height: 40px; padding: 0 8px; }
   .inventory-cards .empty-state { background:var(--panel); border:1px solid var(--line); border-radius:16px; }
+  .inventory-detail-grid { gap: 6px; }
+  .inventory-detail { padding: 9px; }
+  .settings-tabs { width: 100%; }
+  .settings-tabs button { flex: 1 0 auto; }
+  .tip-card { padding: 13px; }
   dialog { width: calc(100% - 20px); max-height: calc(100dvh - 20px); overflow-y: auto; }
   .modal-form { padding: 18px; }
   .modal-actions { position: sticky; bottom: 0; background: white; padding-top: 12px; padding-bottom: max(2px, env(safe-area-inset-bottom)); }

@@ -15,6 +15,9 @@
   let stockPartReturnPalletId = null;
   let selectedStockPartIds = new Set();
   let stockPlannerFeedback = null;
+  let expandedInventoryPartIds = new Set();
+  let openInventoryMenuPartId = null;
+  let activeSettingsTab = 'general';
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -285,11 +288,11 @@
     statProjects: $('#statProjects'), statParts: $('#statParts'), statLow: $('#statLow'), statOut: $('#statOut'), dashboardProjectName: $('#dashboardProjectName'),
     categoryProgress: $('#categoryProgress'), activityList: $('#activityList'),
     projectCards: $('#projectCards'), newProjectBtn: $('#newProjectBtn'),
-    inventorySearch: $('#inventorySearch'), inventoryProjectFilter: $('#inventoryProjectFilter'), inventoryStockFilter: $('#inventoryStockFilter'), inventorySort: $('#inventorySort'),
-    addPartBtn: $('#addPartBtn'), inventoryTableBody: $('#inventoryTableBody'), inventoryEmpty: $('#inventoryEmpty'), inventoryCards: $('#inventoryCards'),
+    inventorySearch: $('#inventorySearch'), inventoryProjectFilter: $('#inventoryProjectFilter'), inventoryStockFilter: $('#inventoryStockFilter'), inventorySort: $('#inventorySort'), inventoryCategoryFilter: $('#inventoryCategoryFilter'),
+    addPartBtn: $('#addPartBtn'), inventoryCards: $('#inventoryCards'),
     orderSelect: $('#orderSelect'), newOrderBtn: $('#newOrderBtn'), deleteOrderBtn: $('#deleteOrderBtn'), orderSummary: $('#orderSummary'), orderBoards: $('#orderBoards'),
     newStockPalletBtn: $('#newStockPalletBtn'), stockSummary: $('#stockSummary'), stockSearch: $('#stockSearch'), stockSearchInfo: $('#stockSearchInfo'), stockPlannerOptions: $('#stockPlannerOptions'), addStockSearchPart: $('#addStockSearchPart'), clearStockSearch: $('#clearStockSearch'), stockSelectedParts: $('#stockSelectedParts'), stockPlannerResults: $('#stockPlannerResults'), stockPalletGrid: $('#stockPalletGrid'),
-    languageSelect: $('#languageSelect'), exportBtn: $('#exportBtn'), importInput: $('#importInput'), resetBtn: $('#resetBtn'),
+    languageSelect: $('#languageSelect'), exportBtn: $('#exportBtn'), importInput: $('#importInput'), resetBtn: $('#resetBtn'), settingsTabs: $('.settings-tabs'),
     projectDialog: $('#projectDialog'), projectForm: $('#projectForm'), projectDialogTitle: $('#projectDialogTitle'), projectPhotoInput: $('#projectPhotoInput'),
     projectPhotoPreview: $('#projectPhotoPreview'), removeProjectPhotoBtn: $('#removeProjectPhotoBtn'),
     projectPartsDialog: $('#projectPartsDialog'), projectPartsForm: $('#projectPartsForm'), projectPartsTitle: $('#projectPartsTitle'), projectPartsSearch: $('#projectPartsSearch'), projectPartsList: $('#projectPartsList'),
@@ -423,6 +426,7 @@
     renderStock();
     renderAlertBar();
     renderInventoryNotice();
+    renderSettingsTabs();
     saveState();
   }
 
@@ -435,7 +439,6 @@
     els.inventoryProjectFilter.innerHTML = `<option value="all">${esc(t('inventory.allParts'))}</option><option value="unassigned">${esc(t('inventory.notInProject'))}</option>${projectOptions}`;
     els.inventoryProjectFilter.value = [...els.inventoryProjectFilter.options].some(option => option.value === previousFilter) ? previousFilter : 'all';
 
-    els.addPartBtn.disabled = false;
     els.newOrderBtn.disabled = !state.projects.length;
   }
 
@@ -461,6 +464,16 @@
 
   function renderInventoryNotice() {
     els.inventoryNote.classList.toggle('hidden', Boolean(state.dismissedNotices.inventoryInfo));
+  }
+
+  function renderSettingsTabs() {
+    $$('[data-settings-tab]').forEach(button => {
+      const active = button.dataset.settingsTab === activeSettingsTab;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
+    });
+    $$('[data-settings-panel]').forEach(panel => panel.classList.toggle('hidden', panel.dataset.settingsPanel !== activeSettingsTab));
   }
 
   function dismissNotice(key, signature = '') {
@@ -529,6 +542,7 @@
     const projectFilter = els.inventoryProjectFilter.value || 'all';
     const stockFilter = els.inventoryStockFilter.value || 'all';
     const sort = els.inventorySort.value || 'name';
+    const categoryFilter = els.inventoryCategoryFilter.value || 'all';
 
     const filtered = state.parts.filter(part => {
       const searchable = [part.code, part.name, dimensionLabel(part), part.length, part.width, part.height, part.category, assemblyLabel(part), ...getProjectNames(part)].join(' ').toLowerCase();
@@ -541,7 +555,8 @@
         || (stockFilter === 'out' && part.quantity <= 0)
         || (stockFilter === 'healthy' && part.quantity >= 5)
         || (stockFilter === 'overflowing' && part.overflowing);
-      return matchesQuery && matchesProject && matchesStock;
+      const matchesCategory = categoryFilter === 'all' || part.category === categoryFilter;
+      return matchesQuery && matchesProject && matchesStock && matchesCategory;
     });
 
     filtered.sort((a, b) => {
@@ -562,33 +577,33 @@
 
   function renderInventory() {
     const parts = getFilteredInventory();
-    els.inventoryTableBody.innerHTML = parts.map(part => {
-      const status = stockStatus(part.quantity);
-      const storedQuantity = storedQuantityForPart(part.id);
-      return `<tr>
-        <td><span class="part-code part-code-badge">${esc(part.code)}</span></td>
-        <td><strong class="part-name table-part-name">${esc(part.name)}</strong>${part.notes ? `<br><small class="muted">${esc(part.notes)}</small>` : ''}</td>
-        <td>${esc(dimensionLabel(part))}</td>
-        <td><span class="assembly-badge">${esc(assemblyLabel(part))}</span></td>
-        <td>${esc(categoryLabel(part.category))}</td>
-        <td><div class="project-chip-row">${projectChips(part, 2)}</div></td>
-        <td><div class="stock-control"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.reduceAria'))}">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.increaseAria'))}">+</button></div></td>
-        <td><strong>${storedQuantity}</strong></td>
-        <td><div class="status-stack"><span class="status ${status.key}">${esc(status.label)}</span>${part.overflowing ? `<span class="status overflowing">${esc(t('status.overflowing'))}</span>` : ''}</div></td>
-        <td><div class="row-actions"><button type="button" class="${part.overflowing ? 'overflow-active' : ''}" data-action="overflow" data-id="${esc(part.id)}">${esc(t(part.overflowing ? 'inventory.spaceAvailable' : 'inventory.markOverflowing'))}</button><button type="button" data-action="edit" data-id="${esc(part.id)}">${esc(t('common.edit'))}</button><button type="button" data-action="delete" data-id="${esc(part.id)}">${esc(t('common.delete'))}</button></div></td>
-      </tr>`;
-    }).join('');
-    els.inventoryEmpty.classList.toggle('hidden', parts.length > 0);
-
+    const visibleIds = new Set(parts.map(part => part.id));
+    if (openInventoryMenuPartId && !visibleIds.has(openInventoryMenuPartId)) openInventoryMenuPartId = null;
     els.inventoryCards.innerHTML = parts.length ? parts.map(part => {
       const status = stockStatus(part.quantity);
       const storedQuantity = storedQuantityForPart(part.id);
-      return `<article class="inventory-card">
-        <div class="inventory-card-head"><div class="part-identity-stack">${partIdentityMarkup(part)}</div><div class="status-stack"><span class="status ${status.key}">${esc(status.label)}</span>${part.overflowing ? `<span class="status overflowing">${esc(t('status.overflowing'))}</span>` : ''}</div></div>
-        <div class="inventory-card-meta"><span class="meta-chip">${esc(categoryLabel(part.category))}</span><span class="meta-chip">${esc(t('inventory.sizeLabel', { size: dimensionLabel(part) }))}</span><span class="meta-chip">${esc(t('inventory.assemblyLabel', { assembly: assemblyLabel(part) }))}</span><span class="meta-chip store-chip">${esc(t('inventory.atStoreLabel', { count: storedQuantity }))}</span>${part.notes ? `<span class="meta-chip">${esc(part.notes)}</span>` : ''}</div>
-        <div class="project-chip-row card-projects">${projectChips(part, 4)}</div>
-        <div class="shared-stock-label">${esc(t('inventory.sharedQuantity'))}</div>
-        <div class="inventory-card-bottom"><div class="stock-control large"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.reduceAria'))}">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.increaseAria'))}">+</button></div><div class="row-actions"><button type="button" class="${part.overflowing ? 'overflow-active' : ''}" data-action="overflow" data-id="${esc(part.id)}">${esc(t(part.overflowing ? 'inventory.spaceAvailable' : 'status.overflowing'))}</button><button type="button" data-action="edit" data-id="${esc(part.id)}">${esc(t('common.edit'))}</button><button type="button" data-action="delete" data-id="${esc(part.id)}">${esc(t('common.delete'))}</button></div></div>
+      const expanded = expandedInventoryPartIds.has(part.id);
+      const menuOpen = openInventoryMenuPartId === part.id;
+      const details = expanded ? `<div class="inventory-card-details">
+        <div class="inventory-detail-grid">
+          <div class="inventory-detail"><span>${esc(t('inventory.table.category'))}</span><strong>${esc(categoryLabel(part.category))}</strong></div>
+          <div class="inventory-detail"><span>${esc(t('inventory.table.size'))}</span><strong>${esc(dimensionLabel(part))}</strong></div>
+          <div class="inventory-detail"><span>${esc(t('inventory.table.store'))}</span><strong>${storedQuantity}</strong></div>
+          <div class="inventory-detail detail-wide"><span>${esc(t('common.notes'))}</span><strong>${esc(part.notes || t('inventory.noNotes'))}</strong></div>
+          <div class="inventory-detail detail-wide"><span>${esc(t('inventory.table.projects'))}</span><div class="project-chip-row">${projectChips(part, 20)}</div></div>
+        </div>
+      </div>` : '';
+      return `<article aria-expanded="${expanded}" aria-label="${esc(t('inventory.cardAria', { part: `${part.code} — ${part.name}` }))}" class="inventory-card ${expanded ? 'expanded' : ''}" data-part-card="${esc(part.id)}" tabindex="0">
+        <div class="inventory-card-head">
+          <div class="inventory-card-identity"><span aria-label="${esc(t('inventory.stockCodeAria', { code: part.code, status: status.label }))}" class="part-code part-code-badge code-status-${status.key}">${esc(part.code)}</span><strong class="part-name">${esc(part.name)}</strong><span class="assembly-persistent">${esc(t('inventory.assemblyLabel', { assembly: assemblyLabel(part) }))}</span></div>
+          <button aria-expanded="${menuOpen}" aria-haspopup="menu" aria-label="${esc(t('inventory.moreActionsAria', { part: part.code }))}" class="inventory-menu-toggle" data-action="menu" data-id="${esc(part.id)}" type="button">⋯</button>
+          <div class="inventory-card-menu ${menuOpen ? 'open' : ''}" role="menu"><button data-action="edit" data-id="${esc(part.id)}" role="menuitem" type="button">${esc(t('common.edit'))}</button><button class="danger-option" data-action="delete" data-id="${esc(part.id)}" role="menuitem" type="button">${esc(t('common.delete'))}</button></div>
+        </div>
+        ${details}
+        <div class="inventory-card-bottom">
+          <div class="inventory-quantity"><span class="inventory-control-label">${esc(t('inventory.quantityLabel'))}</span><div class="stock-control large"><button type="button" data-action="minus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.reduceAria'))}">−</button><strong>${part.quantity}</strong><button type="button" data-action="plus" data-id="${esc(part.id)}" aria-label="${esc(t('inventory.increaseAria'))}">+</button></div></div>
+          <label class="overflow-switch"><span>${esc(t('status.overflowing'))}</span><input aria-label="${esc(t('inventory.overflowSwitchAria', { part: part.code }))}" data-action="overflow-switch" data-id="${esc(part.id)}" type="checkbox" ${part.overflowing ? 'checked' : ''}/><span aria-hidden="true" class="switch-track"><span class="switch-thumb"></span></span></label>
+        </div>
       </article>`;
     }).join('') : `<div class="empty-state"><strong>${esc(t('inventory.noneMatch'))}</strong><span>${esc(t('inventory.noneMatchHint'))}</span></div>`;
   }
@@ -1252,10 +1267,12 @@
     renderAll();
   }
 
-  function togglePartOverflowing(partId) {
+  function togglePartOverflowing(partId, nextValue = null) {
     const part = state.parts.find(candidate => candidate.id === partId);
     if (!part) return;
-    part.overflowing = !part.overflowing;
+    const overflowing = typeof nextValue === 'boolean' ? nextValue : !part.overflowing;
+    if (overflowing === part.overflowing) return;
+    part.overflowing = overflowing;
     addActivity(part.overflowing ? 'activity.overflowing' : 'activity.spaceRestored', `${part.code} — ${part.name}`);
     renderAll();
     if (openStockPalletId) renderStockPalletDetail();
@@ -1408,6 +1425,7 @@
   $$('[data-stock-filter]').forEach(button => button.addEventListener('click', () => {
     els.inventorySearch.value = '';
     els.inventoryProjectFilter.value = 'all';
+    els.inventoryCategoryFilter.value = 'all';
     els.inventoryStockFilter.value = button.dataset.stockFilter;
     switchView('inventory');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1737,19 +1755,61 @@
     if (deleteButton) deleteProject(deleteButton.dataset.id);
   });
 
-  [els.inventorySearch, els.inventoryProjectFilter, els.inventoryStockFilter, els.inventorySort].forEach(control => control.addEventListener(control === els.inventorySearch ? 'input' : 'change', renderInventory));
+  [els.inventorySearch, els.inventoryProjectFilter, els.inventoryStockFilter, els.inventorySort, els.inventoryCategoryFilter].forEach(control => control.addEventListener(control === els.inventorySearch ? 'input' : 'change', renderInventory));
 
   function handleInventoryAction(event) {
     const button = event.target.closest('button[data-action]');
-    if (!button) return;
+    if (!button) return false;
+    if (button.dataset.action === 'menu') {
+      openInventoryMenuPartId = openInventoryMenuPartId === button.dataset.id ? null : button.dataset.id;
+      renderInventory();
+      return true;
+    }
     if (button.dataset.action === 'minus') adjustPartQuantity(button.dataset.id, -1);
     if (button.dataset.action === 'plus') adjustPartQuantity(button.dataset.id, 1);
-    if (button.dataset.action === 'overflow') togglePartOverflowing(button.dataset.id);
-    if (button.dataset.action === 'edit') openPartDialog(state.parts.find(part => part.id === button.dataset.id));
-    if (button.dataset.action === 'delete') deletePart(button.dataset.id);
+    if (button.dataset.action === 'edit') {
+      openInventoryMenuPartId = null;
+      openPartDialog(state.parts.find(part => part.id === button.dataset.id));
+    }
+    if (button.dataset.action === 'delete') {
+      openInventoryMenuPartId = null;
+      deletePart(button.dataset.id);
+    }
+    return true;
   }
-  els.inventoryTableBody.addEventListener('click', handleInventoryAction);
-  els.inventoryCards.addEventListener('click', handleInventoryAction);
+  els.inventoryCards.addEventListener('click', event => {
+    if (handleInventoryAction(event)) return;
+    if (event.target.closest('input, label, .inventory-card-menu')) return;
+    const card = event.target.closest('[data-part-card]');
+    if (!card) return;
+    if (openInventoryMenuPartId) {
+      openInventoryMenuPartId = null;
+      renderInventory();
+      return;
+    }
+    if (expandedInventoryPartIds.has(card.dataset.partCard)) expandedInventoryPartIds.delete(card.dataset.partCard);
+    else expandedInventoryPartIds.add(card.dataset.partCard);
+    renderInventory();
+  });
+  els.inventoryCards.addEventListener('change', event => {
+    const input = event.target.closest('input[data-action="overflow-switch"]');
+    if (input) togglePartOverflowing(input.dataset.id, input.checked);
+  });
+  els.inventoryCards.addEventListener('keydown', event => {
+    if (!['Enter', ' '].includes(event.key) || event.target !== event.target.closest('[data-part-card]')) return;
+    event.preventDefault();
+    const partId = event.target.dataset.partCard;
+    if (expandedInventoryPartIds.has(partId)) expandedInventoryPartIds.delete(partId);
+    else expandedInventoryPartIds.add(partId);
+    renderInventory();
+  });
+
+  els.settingsTabs.addEventListener('click', event => {
+    const button = event.target.closest('[data-settings-tab]');
+    if (!button) return;
+    activeSettingsTab = button.dataset.settingsTab;
+    renderSettingsTabs();
+  });
 
   els.orderSelect.addEventListener('change', () => { state.selectedOrderId = els.orderSelect.value || null; renderAll(); });
   els.deleteOrderBtn.addEventListener('click', () => { const order = getSelectedOrder(); if (order) deleteOrder(order.id); });

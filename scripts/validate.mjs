@@ -32,12 +32,12 @@ for (const reference of expectedReferences) {
   }
 }
 
-const forbiddenHtml = ['id="activeProjectSelect"', 'id="quickAddBtn"', 'ATTENTION NEEDED', 'name="size"', '<span>▦</span>', '<span>▣</span>', '<span>◫</span>'];
+const forbiddenHtml = ['id="activeProjectSelect"', 'id="quickAddBtn"', 'ATTENTION NEEDED', 'name="size"', 'id="inventoryTableBody"', '<span>▦</span>', '<span>▣</span>', '<span>◫</span>'];
 for (const fragment of forbiddenHtml) {
   if (html.includes(fragment)) throw new Error(`index.html still contains removed interface: ${fragment}`);
 }
 
-const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
+const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="inventoryCategoryFilter"', 'class="inventory-fab"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'data-settings-tab="general"', 'data-settings-tab="data"', 'data-settings-tab="tips"', 'id="settingsDataPanel"', 'id="settingsTipsPanel"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
 for (const fragment of requiredHtml) {
   if (!html.includes(fragment)) throw new Error(`index.html is missing requested interface: ${fragment}`);
 }
@@ -72,6 +72,15 @@ if (!app.includes('dismissNotice') || !app.includes('stockAlertSignature') || !a
 }
 if (!app.includes('togglePartOverflowing') || !app.includes("data.get('overflowing')")) {
   throw new Error('Overflowing master-part support is missing.');
+}
+if (!app.includes('expandedInventoryPartIds') || !app.includes('inventory-card-details') || !app.includes('code-status-${status.key}') || !app.includes('data-action="overflow-switch"')) {
+  throw new Error('Expandable inventory cards, stock-coloured codes, or the overflowing switch are missing.');
+}
+if (app.includes('data-action="overflow"')) {
+  throw new Error('The old inventory overflowing button must not return.');
+}
+if (!app.includes('inventoryCategoryFilter') || !app.includes('openInventoryMenuPartId') || !app.includes('renderSettingsTabs')) {
+  throw new Error('The category filter, three-dot part menu, or Settings tabs are missing.');
 }
 if (!app.includes('language: LANGUAGE_CODES.has(source.language)') || !app.includes('applyTranslations') || !app.includes('languageSelect.addEventListener')) {
   throw new Error('Persistent interface language support is missing.');
