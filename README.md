@@ -8,6 +8,7 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - Link the same part to multiple projects without duplicating stock.
 - Shared quantity updates across **All parts** and every linked project.
 - Part code, name, category, separate length/width/height measurements, assembly position such as `2/5`, notes and quantity.
+- Live duplicate warnings use the exact combination of part code, part number and total parts; the same code remains valid when either numbering value differs.
 - Create, rename and delete projects.
 - Upload, replace, remove and expand a project photo.
 - Link and unlink existing master parts from a project.

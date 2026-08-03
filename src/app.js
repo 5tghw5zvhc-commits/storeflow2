@@ -121,6 +121,14 @@
     return values.length ? `${values.join(' × ')} mm` : String(part?.size || '—');
   }
 
+  function partIdentityKey(code, assemblyPosition, assemblyTotal) {
+    return JSON.stringify([
+      String(code || '').trim().toUpperCase(),
+      positiveIntegerOrBlank(assemblyPosition) || null,
+      positiveIntegerOrBlank(assemblyTotal) || null
+    ]);
+  }
+
   function migrateState(input) {
     const source = input && typeof input === 'object' ? input : createInitialState();
     const projects = Array.isArray(source.projects) ? source.projects.map(project => ({
@@ -139,7 +147,9 @@
 
     sourceParts.forEach(oldPart => {
       const code = String(oldPart.code || '').trim().toUpperCase() || `PART-${grouped.size + 1}`;
-      const key = code;
+      const assemblyPosition = positiveIntegerOrBlank(oldPart.assemblyPosition ?? oldPart.partNumber);
+      const assemblyTotal = positiveIntegerOrBlank(oldPart.assemblyTotal ?? oldPart.totalParts);
+      const key = partIdentityKey(code, assemblyPosition, assemblyTotal);
       const dimensions = dimensionsFromPart(oldPart);
       const links = [
         ...(Array.isArray(oldPart.projectIds) ? oldPart.projectIds : []),
@@ -157,8 +167,8 @@
           width: dimensions.width,
           height: dimensions.height,
           size: legacySizeValue(dimensions, typeof oldPart.dimensions === 'string' ? oldPart.dimensions : oldPart.size),
-          assemblyPosition: positiveIntegerOrBlank(oldPart.assemblyPosition ?? oldPart.partNumber),
-          assemblyTotal: positiveIntegerOrBlank(oldPart.assemblyTotal ?? oldPart.totalParts),
+          assemblyPosition,
+          assemblyTotal,
           projectIds: [...new Set(links)],
           notes: String(oldPart.notes || '')
         };
@@ -236,7 +246,7 @@
     projectDialog: $('#projectDialog'), projectForm: $('#projectForm'), projectDialogTitle: $('#projectDialogTitle'), projectPhotoInput: $('#projectPhotoInput'),
     projectPhotoPreview: $('#projectPhotoPreview'), removeProjectPhotoBtn: $('#removeProjectPhotoBtn'),
     projectPartsDialog: $('#projectPartsDialog'), projectPartsForm: $('#projectPartsForm'), projectPartsTitle: $('#projectPartsTitle'), projectPartsSearch: $('#projectPartsSearch'), projectPartsList: $('#projectPartsList'),
-    partDialog: $('#partDialog'), partForm: $('#partForm'), partDialogTitle: $('#partDialogTitle'), partProjectCheckboxes: $('#partProjectCheckboxes'),
+    partDialog: $('#partDialog'), partForm: $('#partForm'), partDialogTitle: $('#partDialogTitle'), partProjectCheckboxes: $('#partProjectCheckboxes'), partDuplicateWarning: $('#partDuplicateWarning'),
     orderDialog: $('#orderDialog'), orderForm: $('#orderForm'), orderItemDialog: $('#orderItemDialog'), orderItemForm: $('#orderItemForm'), availabilityHint: $('#availabilityHint'),
     photoDialog: $('#photoDialog'), photoDialogTitle: $('#photoDialogTitle'), expandedProjectPhoto: $('#expandedProjectPhoto'), toast: $('#toast')
   };
@@ -553,6 +563,27 @@
       : '<div class="checkbox-empty">No projects yet. You can save the part now and assign it later.</div>';
   }
 
+  function findDuplicateMasterPart(id, code, assemblyPosition, assemblyTotal) {
+    if (!String(code || '').trim()) return null;
+    const identity = partIdentityKey(code, assemblyPosition, assemblyTotal);
+    return state.parts.find(part => part.id !== id && partIdentityKey(part.code, part.assemblyPosition, part.assemblyTotal) === identity) || null;
+  }
+
+  function updatePartDuplicateWarning() {
+    const id = $('[name="id"]', els.partForm).value;
+    const code = $('[name="code"]', els.partForm).value;
+    const position = positiveIntegerOrBlank($('[name="assemblyPosition"]', els.partForm).value);
+    const total = positiveIntegerOrBlank($('[name="assemblyTotal"]', els.partForm).value);
+    const numberingIsIncomplete = Boolean(position) !== Boolean(total);
+    const duplicate = numberingIsIncomplete ? null : findDuplicateMasterPart(id, code, position, total);
+
+    els.partDuplicateWarning.classList.toggle('hidden', !duplicate);
+    els.partDuplicateWarning.textContent = duplicate
+      ? `Duplicate master part: ${duplicate.code} with ${position && total ? `Part number ${position} / Total parts ${total}` : 'no Part number / Total parts'} already exists. Change the code or numbering, or edit the existing part.`
+      : '';
+    return duplicate;
+  }
+
   function openPartDialog(part = null) {
     els.partForm.reset();
     $('[name="id"]', els.partForm).value = part?.id || '';
@@ -569,6 +600,7 @@
     $('[name="notes"]', els.partForm).value = part?.notes || '';
     renderPartProjectCheckboxes(part?.projectIds || (state.activeProjectId ? [state.activeProjectId] : []));
     els.partDialogTitle.textContent = part ? 'Edit master part' : 'Add a master part';
+    updatePartDuplicateWarning();
     openDialog(els.partDialog);
   }
 
@@ -917,6 +949,10 @@
     updateProjectPhotoPreview();
   });
 
+  ['code', 'assemblyPosition', 'assemblyTotal'].forEach(name => {
+    $(`[name="${name}"]`, els.partForm).addEventListener('input', updatePartDuplicateWarning);
+  });
+
   els.projectForm.addEventListener('submit', event => {
     event.preventDefault();
     if (projectPhotoBusy) return showToast('The photo is still being prepared.');
@@ -951,13 +987,15 @@
     const data = new FormData(els.partForm);
     const id = String(data.get('id') || '');
     const code = String(data.get('code') || '').trim().toUpperCase();
-    const duplicate = state.parts.find(part => part.code.toUpperCase() === code && part.id !== id);
-    if (duplicate) return showToast(`Master part code ${code} already exists. Edit the existing part instead.`);
-
     const position = positiveIntegerOrBlank(data.get('assemblyPosition'));
     const total = positiveIntegerOrBlank(data.get('assemblyTotal'));
     if ((position && !total) || (!position && total)) return showToast('Enter both assembly numbers, for example 2 / 5.');
     if (position && total && position > total) return showToast('The part number cannot be higher than the total number of parts.');
+    const duplicate = findDuplicateMasterPart(id, code, position, total);
+    if (duplicate) {
+      updatePartDuplicateWarning();
+      return showToast(`Duplicate not saved: ${code} with ${position && total ? `${position}/${total}` : 'no part numbering'} already exists.`);
+    }
 
     const nextProjectIds = data.getAll('projectIds').map(String);
     const dimensions = {

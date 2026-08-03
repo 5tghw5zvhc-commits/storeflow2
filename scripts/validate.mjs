@@ -34,7 +34,7 @@ for (const fragment of forbiddenHtml) {
   if (html.includes(fragment)) throw new Error(`index.html still contains removed interface: ${fragment}`);
 }
 
-const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"'];
+const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"'];
 for (const fragment of requiredHtml) {
   if (!html.includes(fragment)) throw new Error(`index.html is missing requested interface: ${fragment}`);
 }
@@ -51,6 +51,12 @@ if (!app.includes('includedPartIds') || !app.includes('data-action="edit-needed"
 }
 if (app.includes('need-chip')) {
   throw new Error('The read-only checklist quantity chip should not remain.');
+}
+if (!app.includes('partIdentityKey') || !app.includes('findDuplicateMasterPart') || !app.includes('updatePartDuplicateWarning')) {
+  throw new Error('The exact master-part duplicate warning is missing.');
+}
+if (app.includes('part.code.toUpperCase() === code')) {
+  throw new Error('Master parts must not be treated as duplicates by code alone.');
 }
 
 const manifest = JSON.parse(await readFile('manifest.webmanifest', 'utf8'));

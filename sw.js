@@ -1,4 +1,4 @@
-const CACHE_NAME = 'storeflow-shell-v5';
+const CACHE_NAME = 'storeflow-shell-v6';
 const APP_SHELL = [
   './',
   './index.html',
