@@ -37,7 +37,7 @@ for (const fragment of forbiddenHtml) {
   if (html.includes(fragment)) throw new Error(`index.html still contains removed interface: ${fragment}`);
 }
 
-const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="inventoryCategoryFilter"', 'class="inventory-fab"', 'class="inventory-fab stock-fab"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'data-i18n-aria="stock.planner.aria"', 'data-settings-tab="general"', 'data-settings-tab="data"', 'data-settings-tab="tips"', 'id="settingsDataPanel"', 'id="settingsTipsPanel"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
+const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="inventoryCategoryFilter"', 'id="pendingPalletMatchNotice"', 'id="stockItemSubmitBtn"', 'class="inventory-fab"', 'class="inventory-fab stock-fab"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'data-i18n-aria="stock.planner.aria"', 'data-settings-tab="general"', 'data-settings-tab="data"', 'data-settings-tab="tips"', 'id="settingsDataPanel"', 'id="settingsTipsPanel"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
 for (const fragment of requiredHtml) {
   if (!html.includes(fragment)) throw new Error(`index.html is missing requested interface: ${fragment}`);
 }
@@ -90,6 +90,15 @@ if (!app.includes('inventoryCategoryFilter') || !app.includes('openInventoryMenu
 }
 if (!app.includes('language: LANGUAGE_CODES.has(source.language)') || !app.includes('applyTranslations') || !app.includes('languageSelect.addEventListener')) {
   throw new Error('Persistent interface language support is missing.');
+}
+if (!app.includes('normalizePartSearch') || !app.includes('partMeasurementAliases') || !app.includes('resolveUniquePartSearch')) {
+  throw new Error('Measurement-aware part search is missing.');
+}
+if (app.includes("source.projectIds || (state.activeProjectId ? [state.activeProjectId] : [])")) {
+  throw new Error('New master parts must not preselect the active project.');
+}
+if (!app.includes('pendingCode') || !app.includes('pendingName') || !app.includes('linkPendingStockItemsToPart') || !app.includes('pendingPalletMatchNotice')) {
+  throw new Error('Unregistered pallet-part persistence or confirmed Master Inventory linking is missing.');
 }
 if (/showToast\(\s*['"`]/.test(app) || /window\.confirm\(\s*['"`]/.test(app)) {
   throw new Error('Toast and confirmation text must come from the translation catalogue.');

@@ -211,6 +211,8 @@ td { font-size: 13px; }
 tbody tr:last-child td { border-bottom: 0; }
 .part-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; }
 .part-code-badge { display: inline-flex; width: max-content; max-width: 100%; padding: 4px 7px; border: 1px solid #c8ddd9; border-radius: 7px; background: #edf7f5; color: var(--brand-dark); font-size: 10px; line-height: 1.2; letter-spacing: .035em; overflow-wrap: anywhere; }
+.unregistered-part-badge { display: inline-flex; width: max-content; padding: 4px 7px; border: 1px solid #e6be78; border-radius: 999px; background: var(--warning-soft); color: #765212; font-size: 9px; line-height: 1.2; font-weight: 900; letter-spacing: .045em; text-transform: uppercase; }
+.pending-part-code { border-style: dashed; border-color: #d5ad68; background: #fffaf0; color: #765212; }
 .part-name { color: var(--text); font-size: 14px; font-weight: 850; line-height: 1.25; }
 .table-part-name { font-size: 13px; }
 .part-identity-stack { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -325,6 +327,11 @@ tbody tr:last-child td { border-bottom: 0; }
 .stock-empty { grid-column: 1 / -1; }
 .unknown-part-prompt { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px; border: 1px solid #e6be78; border-radius: 11px; background: var(--warning-soft); color: #765212; font-size: 12px; font-weight: 800; }
 .unknown-part-prompt button { flex: 0 0 auto; }
+.pending-pallet-notice { margin: -4px 0 15px; padding: 13px 14px; border: 1px solid #e6be78; border-radius: 13px; background: #fff8e9; color: #654a19; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.pending-pallet-notice > div { min-width: 0; display: grid; gap: 4px; }
+.pending-pallet-notice strong { font-size: 13px; line-height: 1.35; }
+.pending-pallet-notice span { color: #7b643a; font-size: 11px; line-height: 1.4; }
+.pending-pallet-notice button { flex: 0 0 auto; }
 .stock-detail-dialog { width: min(820px, calc(100% - 28px)); max-height: calc(100dvh - 28px); }
 .stock-detail-content { padding: 20px; display: flex; flex-direction: column; gap: 15px; max-height: calc(100dvh - 28px); }
 .stock-detail-meta { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -677,4 +684,6 @@ table { min-width: 1380px; }
   .stored-quantity-editor input { width: 66px; }
   .unknown-part-prompt { align-items: stretch; flex-direction: column; }
   .unknown-part-prompt button { width: 100%; }
+  .pending-pallet-notice { align-items: stretch; flex-direction: column; }
+  .pending-pallet-notice button { width: 100%; }
 }

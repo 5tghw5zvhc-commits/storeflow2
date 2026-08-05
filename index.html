@@ -102,6 +102,7 @@
 </select>
 </div>
 </div>
+<div class="pending-pallet-notice hidden" id="pendingPalletMatchNotice" role="status"></div>
 <div class="inventory-cards" id="inventoryCards"></div>
 <button aria-label="Add master part" class="inventory-fab" data-i18n-aria="inventory.addMasterAria" id="addPartBtn" type="button"><span aria-hidden="true">+</span></button>
 </section>
@@ -256,12 +257,12 @@
 <div class="modal-head"><div><p class="eyebrow" data-i18n="stockItem.eyebrow">PALLET CONTENTS</p><h3 data-i18n="stockItem.title">Add a stored part</h3></div><button class="icon-button close-dialog" type="button">×</button></div>
 <input name="palletId" type="hidden"/>
 <input name="partId" type="hidden"/>
-<label><span data-i18n="stockItem.search">Part code or name</span><input autocomplete="off" data-i18n-placeholder="stockItem.searchPlaceholder" id="stockPartSearch" list="stockPartOptions" placeholder="Start typing a code or part name" required=""/></label>
+<label><span data-i18n="stockItem.search">Part code, name or measurements</span><input autocomplete="off" data-i18n-placeholder="stockItem.searchPlaceholder" id="stockPartSearch" list="stockPartOptions" placeholder="Start typing a code, name or measurements" required=""/></label>
 <datalist id="stockPartOptions"></datalist>
 <label><span data-i18n="stockItem.quantity">Quantity on this pallet</span><input inputmode="numeric" min="1" name="quantity" required="" type="number" value="1"/></label>
 <div class="availability-hint" id="stockPartMatchHint"></div>
-<div class="unknown-part-prompt hidden" id="stockUnknownPart"><span data-i18n="stockItem.unknown">This part is not in Master Inventory.</span><button class="secondary" data-i18n="stockItem.createMaster" id="createStockMasterPartBtn" type="button">Create master part</button></div>
-<div class="modal-actions"><button class="secondary close-dialog" data-i18n="common.cancel" type="button">Cancel</button><button class="primary" data-i18n="stockItem.add" type="submit">Add to pallet</button></div>
+<div class="unknown-part-prompt hidden" id="stockUnknownPart"><span data-i18n="stockItem.unknown">This part is not in Master Inventory. Add it as unregistered now, or create its master record first.</span><button class="secondary" data-i18n="stockItem.createMaster" id="createStockMasterPartBtn" type="button">Create master part</button></div>
+<div class="modal-actions"><button class="secondary close-dialog" data-i18n="common.cancel" type="button">Cancel</button><button class="primary" data-i18n="stockItem.add" id="stockItemSubmitBtn" type="submit">Add to pallet</button></div>
 </form>
 </dialog>
 <dialog class="stock-detail-dialog" id="stockPalletDetailDialog">

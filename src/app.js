@@ -135,6 +135,149 @@
     return values.length ? `${values.join(' × ')} mm` : String(part?.size || '—');
   }
 
+  function normalizePartSearch(value) {
+    return String(value ?? '')
+      .normalize('NFKC')
+      .toLocaleLowerCase()
+      .replace(/(\d),(\d)/g, '$1.$2')
+      .replace(/[×*]/g, ' ')
+      .replace(/(\d)\s*x\s*(?=\d)/g, '$1 ')
+      .replace(/[^\p{L}\p{N}.]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function partMeasurementAliases(part) {
+    const dimensions = dimensionsFromPart(part);
+    const ordered = [dimensions.length, dimensions.width, dimensions.height].filter(Boolean);
+    return [
+      dimensionLabel(part),
+      dimensions.length,
+      dimensions.width,
+      dimensions.height,
+      ordered.join(' '),
+      ordered.join('x'),
+      ordered.join('*'),
+      ordered.join('×')
+    ].filter(Boolean);
+  }
+
+  function partSearchAliases(part) {
+    return [
+      part.code,
+      part.name,
+      `${part.code} — ${part.name}`,
+      part.category,
+      assemblyLabel(part),
+      ...partMeasurementAliases(part),
+      ...getProjectNames(part)
+    ].filter(Boolean);
+  }
+
+  function partLookupAliases(part) {
+    return [part.code, part.name, `${part.code} — ${part.name}`, ...partMeasurementAliases(part)].filter(Boolean);
+  }
+
+  function partMatchesSearch(part, value) {
+    const normalized = normalizePartSearch(value);
+    if (!normalized) return true;
+    const haystack = normalizePartSearch(partSearchAliases(part).join(' '));
+    return normalized.split(' ').every(token => haystack.includes(token));
+  }
+
+  function resolveUniquePartSearch(value) {
+    const normalized = normalizePartSearch(value);
+    if (!normalized) return { part: null, reason: 'missing' };
+    const exact = state.parts.filter(part => partLookupAliases(part).some(alias => normalizePartSearch(alias) === normalized));
+    if (exact.length === 1) return { part: exact[0], reason: '' };
+    if (exact.length > 1) return { part: null, reason: 'ambiguous' };
+    const tokens = normalized.split(' ');
+    const partial = state.parts.filter(part => {
+      const haystack = normalizePartSearch(partLookupAliases(part).join(' '));
+      return tokens.every(token => haystack.includes(token));
+    });
+    if (partial.length === 1) return { part: partial[0], reason: '' };
+    return { part: null, reason: partial.length ? 'ambiguous' : 'missing' };
+  }
+
+  function parsePendingPartInput(value) {
+    const raw = String(value || '').trim();
+    const separator = raw.indexOf(' — ');
+    if (separator >= 0) {
+      return {
+        pendingCode: raw.slice(0, separator).trim().toUpperCase(),
+        pendingName: raw.slice(separator + 3).trim()
+      };
+    }
+    const looksLikeCode = /[\d_./-]/u.test(raw) || (raw === raw.toLocaleUpperCase() && raw !== raw.toLocaleLowerCase());
+    return looksLikeCode
+      ? { pendingCode: raw.toUpperCase(), pendingName: '' }
+      : { pendingCode: '', pendingName: raw };
+  }
+
+  function isPendingStockItem(item) {
+    return Boolean(item && !item.partId && (String(item.pendingCode || '').trim() || String(item.pendingName || '').trim()));
+  }
+
+  function pendingStockItemLabel(item) {
+    return String(item?.pendingName || item?.pendingCode || '').trim();
+  }
+
+  function pendingStockItemAliases(item) {
+    return [item?.pendingCode, item?.pendingName, `${item?.pendingCode || ''} — ${item?.pendingName || ''}`]
+      .map(normalizePartSearch)
+      .filter(Boolean);
+  }
+
+  function pendingStockItemKey(item) {
+    return pendingStockItemAliases(item)[0] || `pending-${item?.id || ''}`;
+  }
+
+  function pendingStockItemMatchesPart(item, part) {
+    if (!isPendingStockItem(item) || !part) return false;
+    const pendingAliases = new Set(pendingStockItemAliases(item));
+    return [part.code, part.name, `${part.code} — ${part.name}`]
+      .map(normalizePartSearch)
+      .filter(Boolean)
+      .some(alias => pendingAliases.has(alias));
+  }
+
+  function pendingStockMatchesForText(value) {
+    const normalized = normalizePartSearch(value);
+    if (!normalized) return [];
+    return state.stockPallets.flatMap(pallet => pallet.items
+      .filter(item => isPendingStockItem(item) && pendingStockItemAliases(item).includes(normalized))
+      .map(item => ({ pallet, item })));
+  }
+
+  function pendingStockMatchesForPart(part) {
+    return state.stockPallets.flatMap(pallet => pallet.items
+      .filter(item => pendingStockItemMatchesPart(item, part))
+      .map(item => ({ pallet, item })));
+  }
+
+  function linkPendingStockItemsToPart(part) {
+    let linkedCount = 0;
+    state.stockPallets.forEach(pallet => {
+      const matches = pallet.items.filter(item => pendingStockItemMatchesPart(item, part));
+      if (!matches.length) return;
+      let masterItem = pallet.items.find(item => item.partId === part.id) || null;
+      matches.forEach(item => {
+        linkedCount += 1;
+        if (masterItem && masterItem !== item) {
+          masterItem.quantity += item.quantity;
+          pallet.items = pallet.items.filter(candidate => candidate.id !== item.id);
+          return;
+        }
+        item.partId = part.id;
+        delete item.pendingCode;
+        delete item.pendingName;
+        masterItem = item;
+      });
+    });
+    return linkedCount;
+  }
+
   function partIdentityKey(code, assemblyPosition, assemblyTotal) {
     return JSON.stringify([
       String(code || '').trim().toUpperCase(),
@@ -227,11 +370,17 @@
         palletNumber: String(pallet.palletNumber || pallet.number || '').trim(),
         notes: String(pallet.notes || ''),
         createdAt: pallet.createdAt || new Date().toISOString(),
-        items: (Array.isArray(pallet.items) ? pallet.items : []).map(item => ({
-          id: item.id || uid('stock_item'),
-          partId: oldToNew.get(item.partId) || item.partId,
-          quantity: Math.max(1, Math.floor(Number(item.quantity) || 1))
-        })).filter(item => validPartIds.has(item.partId))
+        items: (Array.isArray(pallet.items) ? pallet.items : []).map(item => {
+          const mappedPartId = oldToNew.get(item.partId) || item.partId;
+          const hasMasterPart = validPartIds.has(mappedPartId);
+          return {
+            id: item.id || uid('stock_item'),
+            partId: hasMasterPart ? mappedPartId : '',
+            pendingCode: hasMasterPart ? '' : String(item.pendingCode || item.partCode || '').trim().toUpperCase(),
+            pendingName: hasMasterPart ? '' : String(item.pendingName || item.partName || '').trim(),
+            quantity: Math.max(1, Math.floor(Number(item.quantity) || 1))
+          };
+        }).filter(item => item.partId || item.pendingCode || item.pendingName)
       }))
       .filter(pallet => pallet.deliveryNumber && pallet.palletNumber);
 
@@ -291,7 +440,7 @@
     categoryProgress: $('#categoryProgress'), activityList: $('#activityList'),
     projectCards: $('#projectCards'), newProjectBtn: $('#newProjectBtn'),
     inventorySearch: $('#inventorySearch'), inventoryProjectFilter: $('#inventoryProjectFilter'), inventoryStockFilter: $('#inventoryStockFilter'), inventorySort: $('#inventorySort'), inventoryCategoryFilter: $('#inventoryCategoryFilter'),
-    addPartBtn: $('#addPartBtn'), inventoryCards: $('#inventoryCards'),
+    addPartBtn: $('#addPartBtn'), inventoryCards: $('#inventoryCards'), pendingPalletMatchNotice: $('#pendingPalletMatchNotice'),
     orderSelect: $('#orderSelect'), newOrderBtn: $('#newOrderBtn'), deleteOrderBtn: $('#deleteOrderBtn'), orderSummary: $('#orderSummary'), orderBoards: $('#orderBoards'),
     newStockPalletBtn: $('#newStockPalletBtn'), stockSummary: $('#stockSummary'), stockSearch: $('#stockSearch'), stockSearchInfo: $('#stockSearchInfo'), stockPlannerOptions: $('#stockPlannerOptions'), addStockSearchPart: $('#addStockSearchPart'), clearStockSearch: $('#clearStockSearch'), stockSelectedParts: $('#stockSelectedParts'), stockPlannerResults: $('#stockPlannerResults'), stockPalletGrid: $('#stockPalletGrid'),
     languageSelect: $('#languageSelect'), exportBtn: $('#exportBtn'), importInput: $('#importInput'), resetBtn: $('#resetBtn'), settingsTabs: $('.settings-tabs'),
@@ -301,7 +450,7 @@
     partDialog: $('#partDialog'), partForm: $('#partForm'), partDialogTitle: $('#partDialogTitle'), partProjectCheckboxes: $('#partProjectCheckboxes'), partDuplicateWarning: $('#partDuplicateWarning'),
     orderDialog: $('#orderDialog'), orderForm: $('#orderForm'), orderItemDialog: $('#orderItemDialog'), orderItemForm: $('#orderItemForm'), availabilityHint: $('#availabilityHint'),
     stockPalletDialog: $('#stockPalletDialog'), stockPalletForm: $('#stockPalletForm'), stockPalletDialogTitle: $('#stockPalletDialogTitle'),
-    stockItemDialog: $('#stockItemDialog'), stockItemForm: $('#stockItemForm'), stockPartSearch: $('#stockPartSearch'), stockPartOptions: $('#stockPartOptions'), stockPartMatchHint: $('#stockPartMatchHint'), stockUnknownPart: $('#stockUnknownPart'), createStockMasterPartBtn: $('#createStockMasterPartBtn'),
+    stockItemDialog: $('#stockItemDialog'), stockItemForm: $('#stockItemForm'), stockPartSearch: $('#stockPartSearch'), stockPartOptions: $('#stockPartOptions'), stockPartMatchHint: $('#stockPartMatchHint'), stockUnknownPart: $('#stockUnknownPart'), createStockMasterPartBtn: $('#createStockMasterPartBtn'), stockItemSubmitBtn: $('#stockItemSubmitBtn'),
     stockPalletDetailDialog: $('#stockPalletDetailDialog'), stockPalletDetailTitle: $('#stockPalletDetailTitle'), stockPalletDetailMeta: $('#stockPalletDetailMeta'), stockPalletItems: $('#stockPalletItems'), deleteStockPalletBtn: $('#deleteStockPalletBtn'), editStockPalletBtn: $('#editStockPalletBtn'), addStockPalletItemBtn: $('#addStockPalletItemBtn'),
     photoDialog: $('#photoDialog'), photoDialogTitle: $('#photoDialogTitle'), expandedProjectPhoto: $('#expandedProjectPhoto'), toast: $('#toast')
   };
@@ -385,6 +534,14 @@
   function partIdentityMarkup(part) {
     if (!part) return `<strong class="part-name">${esc(t('inventory.deletedPart'))}</strong>`;
     return `<span class="part-code part-code-badge">${esc(part.code)}</span><strong class="part-name">${esc(part.name)}</strong>`;
+  }
+
+  function stockItemIdentityMarkup(item, part) {
+    if (part) return partIdentityMarkup(part);
+    if (!isPendingStockItem(item)) return partIdentityMarkup(null);
+    const code = String(item.pendingCode || '').trim();
+    const name = String(item.pendingName || '').trim();
+    return `<span class="unregistered-part-badge">${esc(t('stock.unregistered'))}</span>${code ? `<span class="part-code part-code-badge pending-part-code">${esc(code)}</span>` : ''}<strong class="part-name">${esc(name || code)}</strong>`;
   }
 
   function assemblyLabel(part) {
@@ -540,15 +697,14 @@
   }
 
   function getFilteredInventory() {
-    const query = els.inventorySearch.value.trim().toLowerCase();
+    const query = els.inventorySearch.value.trim();
     const projectFilter = els.inventoryProjectFilter.value || 'all';
     const stockFilter = els.inventoryStockFilter.value || 'all';
     const sort = els.inventorySort.value || 'name';
     const categoryFilter = els.inventoryCategoryFilter.value || 'all';
 
     const filtered = state.parts.filter(part => {
-      const searchable = [part.code, part.name, dimensionLabel(part), part.length, part.width, part.height, part.category, assemblyLabel(part), ...getProjectNames(part)].join(' ').toLowerCase();
-      const matchesQuery = !query || searchable.includes(query);
+      const matchesQuery = partMatchesSearch(part, query);
       const matchesProject = projectFilter === 'all'
         || (projectFilter === 'unassigned' && !(part.projectIds || []).length)
         || partInProject(part, projectFilter);
@@ -578,6 +734,7 @@
   }
 
   function renderInventory() {
+    renderPendingPalletMatchNotice();
     const parts = getFilteredInventory();
     const visibleIds = new Set(parts.map(part => part.id));
     if (openInventoryMenuPartId && !visibleIds.has(openInventoryMenuPartId)) openInventoryMenuPartId = null;
@@ -608,6 +765,30 @@
         </div>
       </article>`;
     }).join('') : `<div class="empty-state"><strong>${esc(t('inventory.noneMatch'))}</strong><span>${esc(t('inventory.noneMatchHint'))}</span></div>`;
+  }
+
+  function renderPendingPalletMatchNotice() {
+    const matches = pendingStockMatchesForText(els.inventorySearch.value);
+    if (!matches.length) {
+      els.pendingPalletMatchNotice.classList.add('hidden');
+      els.pendingPalletMatchNotice.innerHTML = '';
+      return;
+    }
+    const firstItem = matches[0].item;
+    const label = pendingStockItemLabel(firstItem);
+    const candidateParts = state.parts.filter(part => pendingStockItemMatchesPart(firstItem, part));
+    let help = t('inventory.pendingCreateHelp');
+    let action = `<button class="secondary" data-pending-action="create" type="button">${esc(t('inventory.pendingCreate'))}</button>`;
+    if (candidateParts.length === 1) {
+      const part = candidateParts[0];
+      help = t('inventory.pendingLinkHelp', { code: part.code, name: part.name });
+      action = `<button class="secondary" data-part-id="${esc(part.id)}" data-pending-action="link" type="button">${esc(t('inventory.pendingLink'))}</button>`;
+    } else if (candidateParts.length > 1) {
+      help = t('inventory.pendingAmbiguousHelp');
+      action = '';
+    }
+    els.pendingPalletMatchNotice.innerHTML = `<div><strong>${esc(t('inventory.pendingFound', { count: matches.length, part: label }))}</strong><span>${esc(help)}</span></div>${action}`;
+    els.pendingPalletMatchNotice.classList.remove('hidden');
   }
 
   function renderOrders() {
@@ -668,20 +849,7 @@
   }
 
   function resolveStockPlannerPart(value) {
-    const normalized = String(value || '').trim().toLocaleLowerCase();
-    if (!normalized) return { part: null, reason: 'missing' };
-    const valuesFor = part => [
-      part.code,
-      part.name,
-      `${part.code} — ${part.name}`,
-      stockPlannerPartLabel(part)
-    ].map(candidate => String(candidate).toLocaleLowerCase());
-    const exact = state.parts.filter(part => valuesFor(part).includes(normalized));
-    if (exact.length === 1) return { part: exact[0], reason: '' };
-    if (exact.length > 1) return { part: null, reason: 'ambiguous' };
-    const partial = state.parts.filter(part => valuesFor(part).some(candidate => candidate.includes(normalized)));
-    if (partial.length === 1) return { part: partial[0], reason: '' };
-    return { part: null, reason: partial.length ? 'ambiguous' : 'missing' };
+    return resolveUniquePartSearch(value);
   }
 
   function addStockPlannerParts(rawValue = els.stockSearch.value) {
@@ -849,9 +1017,10 @@
     const partRows = sortedItems.map(item => {
       const part = state.parts.find(candidate => candidate.id === item.partId);
       const match = plannerCandidate && requestedIds.has(item.partId);
+      const itemLabel = part?.code || pendingStockItemLabel(item) || t('common.part');
       return `<div class="stock-card-part ${match ? 'requested-part-match' : ''}">
-        <div>${partIdentityMarkup(part)}${match ? `<small class="needed-match-label">${esc(t('stock.planner.neededPart'))}</small>` : ''}</div>
-        <label class="stock-card-quantity"><span>${esc(t('stock.onPallet'))}</span><input aria-label="${esc(t('stock.quantityAria', { part: part?.code || t('common.part') }))}" data-item-id="${esc(item.id)}" data-pallet-id="${esc(pallet.id)}" data-stock-action="edit-quantity" inputmode="numeric" min="1" step="1" type="number" value="${item.quantity}"/></label>
+        <div>${stockItemIdentityMarkup(item, part)}${match ? `<small class="needed-match-label">${esc(t('stock.planner.neededPart'))}</small>` : ''}</div>
+        <label class="stock-card-quantity"><span>${esc(t('stock.onPallet'))}</span><input aria-label="${esc(t('stock.quantityAria', { part: itemLabel }))}" data-item-id="${esc(item.id)}" data-pallet-id="${esc(pallet.id)}" data-stock-action="edit-quantity" inputmode="numeric" min="1" step="1" type="number" value="${item.quantity}"/></label>
         <button aria-label="${esc(t('stock.removePartAria'))}" class="remove-item" data-item-id="${esc(item.id)}" data-pallet-id="${esc(pallet.id)}" data-stock-action="remove-item" type="button">×</button>
       </div>`;
     }).join('');
@@ -881,7 +1050,7 @@
     const requestedIds = new Set(selectedParts.map(part => part.id));
     const pallets = [...state.stockPallets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     const storedUnits = state.stockPallets.reduce((sum, pallet) => sum + pallet.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
-    const distinctParts = new Set(state.stockPallets.flatMap(pallet => pallet.items.map(item => item.partId))).size;
+    const distinctParts = new Set(state.stockPallets.flatMap(pallet => pallet.items.map(item => item.partId || pendingStockItemKey(item)))).size;
     els.stockSummary.innerHTML = `<div class="summary-chip"><span>${esc(t('stock.storedPallets'))}</span><strong>${state.stockPallets.length}</strong></div><div class="summary-chip"><span>${esc(t('stock.differentParts'))}</span><strong>${distinctParts}</strong></div><div class="summary-chip"><span>${esc(t('stock.unitsAtStore'))}</span><strong>${storedUnits}</strong></div>`;
 
     els.stockPlannerOptions.innerHTML = state.parts.filter(part => !requestedIds.has(part.id)).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map(part => `<option value="${esc(stockPlannerPartLabel(part))}"></option>`).join('');
@@ -924,43 +1093,61 @@
   }
 
   function resolveStockPartSearch(value) {
-    const normalized = String(value || '').trim().toLowerCase();
-    if (!normalized) return null;
-    const matches = state.parts.filter(part => [part.code, part.name, `${part.code} — ${part.name}`].some(candidate => candidate.toLowerCase() === normalized));
-    return matches.length === 1 ? matches[0] : null;
+    return resolveUniquePartSearch(value);
   }
 
   function updateStockPartMatch() {
     const pallet = getStockPallet($('[name="palletId"]', els.stockItemForm).value);
     const raw = els.stockPartSearch.value.trim();
-    const part = resolveStockPartSearch(raw);
+    const result = resolveStockPartSearch(raw);
+    const part = result.part;
     const alreadyAdded = part && pallet?.items.some(item => item.partId === part.id);
-    const submitButton = $('button[type="submit"]', els.stockItemForm);
+    const pendingAlreadyAdded = !part && pallet?.items.some(item => isPendingStockItem(item) && pendingStockItemAliases(item).includes(normalizePartSearch(raw)));
+    const submitButton = els.stockItemSubmitBtn;
     $('[name="partId"]', els.stockItemForm).value = part && !alreadyAdded ? part.id : '';
     els.stockPartMatchHint.className = 'availability-hint';
     els.stockUnknownPart.classList.add('hidden');
 
     if (!raw) {
       els.stockPartMatchHint.textContent = t('stock.chooseMaster');
+      submitButton.textContent = t('stockItem.add');
       submitButton.disabled = true;
       return;
     }
     if (alreadyAdded) {
       els.stockPartMatchHint.textContent = t('stock.alreadyOnPallet');
       els.stockPartMatchHint.classList.add('warning');
+      submitButton.textContent = t('stockItem.add');
+      submitButton.disabled = true;
+      return;
+    }
+    if (pendingAlreadyAdded) {
+      els.stockPartMatchHint.textContent = t('stock.unregisteredAlreadyOnPallet');
+      els.stockPartMatchHint.classList.add('warning');
+      els.stockUnknownPart.classList.remove('hidden');
+      submitButton.textContent = t('stockItem.addUnregistered');
       submitButton.disabled = true;
       return;
     }
     if (part) {
       els.stockPartMatchHint.textContent = t('stock.matchDetails', { received: part.quantity, stored: storedQuantityForPart(part.id), overflowing: part.overflowing ? t('stock.markedOverflowingSuffix') : '' });
       if (part.overflowing) els.stockPartMatchHint.classList.add('warning');
+      submitButton.textContent = t('stockItem.add');
       submitButton.disabled = false;
+      return;
+    }
+    if (result.reason === 'ambiguous') {
+      els.stockPartMatchHint.textContent = t('stockItem.ambiguous');
+      els.stockPartMatchHint.classList.add('warning');
+      submitButton.textContent = t('stockItem.add');
+      submitButton.disabled = true;
       return;
     }
     els.stockPartMatchHint.textContent = t('stock.noExactMatch');
     els.stockPartMatchHint.classList.add('warning');
     els.stockUnknownPart.classList.remove('hidden');
-    submitButton.disabled = true;
+    submitButton.textContent = t('stockItem.addUnregistered');
+    submitButton.disabled = false;
   }
 
   function openStockItemDialog(palletId, preferredPartId = '') {
@@ -971,7 +1158,7 @@
     $('[name="quantity"]', els.stockItemForm).value = 1;
     const addedIds = new Set(pallet.items.map(item => item.partId));
     const availableParts = state.parts.filter(part => !addedIds.has(part.id)).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
-    els.stockPartOptions.innerHTML = availableParts.map(part => `<option value="${esc(part.code)} — ${esc(part.name)}" label="${esc(t('stock.optionDetails', { received: part.quantity, stored: storedQuantityForPart(part.id) }))}"></option>`).join('');
+    els.stockPartOptions.innerHTML = availableParts.map(part => `<option value="${esc(part.code)} — ${esc(part.name)}" label="${esc(t('stock.optionDetailsWithSize', { size: dimensionLabel(part), received: part.quantity, stored: storedQuantityForPart(part.id) }))}"></option>`).join('');
     const preferred = state.parts.find(part => part.id === preferredPartId);
     els.stockPartSearch.value = preferred ? `${preferred.code} — ${preferred.name}` : '';
     closeDialog(els.stockPalletDetailDialog);
@@ -993,7 +1180,7 @@
     els.stockPalletItems.innerHTML = pallet.items.length ? pallet.items.map(item => {
       const part = state.parts.find(candidate => candidate.id === item.partId);
       return `<div class="stock-detail-item">
-        <div class="stock-detail-part"><div class="part-identity-stack">${partIdentityMarkup(part)}</div><span>${part ? esc(t('stock.partDetail', { category: categoryLabel(part.category), size: dimensionLabel(part), received: part.quantity, stored: storedQuantityForPart(part.id) })) : esc(t('stock.masterUnavailable'))}</span>${part?.overflowing ? `<span class="status overflowing">${esc(t('status.overflowing'))}</span>` : ''}</div>
+        <div class="stock-detail-part"><div class="part-identity-stack">${stockItemIdentityMarkup(item, part)}</div><span>${part ? esc(t('stock.partDetail', { category: categoryLabel(part.category), size: dimensionLabel(part), received: part.quantity, stored: storedQuantityForPart(part.id) })) : esc(t(isPendingStockItem(item) ? 'stock.unregisteredDetail' : 'stock.masterUnavailable'))}</span>${part?.overflowing ? `<span class="status overflowing">${esc(t('status.overflowing'))}</span>` : ''}</div>
         <label class="stored-quantity-editor"><span>${esc(t('stock.onPallet'))}</span><input type="number" min="1" step="1" inputmode="numeric" value="${item.quantity}" data-action="stock-edit-quantity" data-item-id="${esc(item.id)}" /></label>
         <button class="remove-item" data-action="stock-remove-item" data-item-id="${esc(item.id)}" aria-label="${esc(t('stock.removePartAria'))}" type="button">×</button>
       </div>`;
@@ -1050,7 +1237,7 @@
     $('[name="assemblyTotal"]', els.partForm).value = source.assemblyTotal || '';
     $('[name="overflowing"]', els.partForm).checked = Boolean(source.overflowing);
     $('[name="notes"]', els.partForm).value = source.notes || '';
-    renderPartProjectCheckboxes(source.projectIds || (state.activeProjectId ? [state.activeProjectId] : []));
+    renderPartProjectCheckboxes(part ? (part.projectIds || []) : (defaults.projectIds || []));
     els.partDialogTitle.textContent = t(part ? 'partDialog.editTitle' : 'partDialog.addTitle');
     updatePartDuplicateWarning();
     openDialog(els.partDialog);
@@ -1117,8 +1304,8 @@
 
   function renderProjectPartsList() {
     const projectId = $('[name="projectId"]', els.projectPartsForm).value;
-    const query = els.projectPartsSearch.value.trim().toLowerCase();
-    const parts = state.parts.filter(part => !query || [part.code, part.name, dimensionLabel(part), part.category].join(' ').toLowerCase().includes(query));
+    const query = els.projectPartsSearch.value.trim();
+    const parts = state.parts.filter(part => partMatchesSearch(part, query));
     els.projectPartsList.innerHTML = parts.length
       ? parts.map(part => {
         const size = dimensionLabel(part);
@@ -1308,7 +1495,7 @@
     const previousQuantity = item.quantity;
     item.quantity = nextQuantity;
     const part = state.parts.find(candidate => candidate.id === item.partId);
-    addActivity('activity.stockPalletQuantityChanged', `${part?.code || t('common.part')}: ${previousQuantity} → ${nextQuantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+    addActivity('activity.stockPalletQuantityChanged', `${part?.code || pendingStockItemLabel(item) || t('common.part')}: ${previousQuantity} → ${nextQuantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     renderAll();
     if (els.stockPalletDetailDialog.hasAttribute('open') && openStockPalletId === pallet.id) renderStockPalletDetail();
     showToast(t('message.storedUpdated'));
@@ -1319,9 +1506,10 @@
     const item = pallet?.items.find(candidate => candidate.id === itemId);
     if (!item) return;
     const part = state.parts.find(candidate => candidate.id === item.partId);
-    if (!window.confirm(t('message.removeStoredConfirm', { part: part?.code || t('common.part'), delivery: pallet.deliveryNumber, pallet: pallet.palletNumber }))) return;
+    const itemLabel = part?.code || pendingStockItemLabel(item) || t('common.part');
+    if (!window.confirm(t('message.removeStoredConfirm', { part: itemLabel, delivery: pallet.deliveryNumber, pallet: pallet.palletNumber }))) return;
     pallet.items = pallet.items.filter(candidate => candidate.id !== itemId);
-    addActivity('activity.stockPalletPartRemoved', `${part?.code || t('common.part')} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+    addActivity('activity.stockPalletPartRemoved', `${itemLabel} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     renderAll();
     if (els.stockPalletDetailDialog.hasAttribute('open') && openStockPalletId === pallet.id) renderStockPalletDetail();
     showToast(t('message.storedPartRemoved'));
@@ -1560,8 +1748,15 @@
     };
     if (!payload.code || !payload.name) return;
 
+    const pendingMatches = id ? [] : pendingStockMatchesForPart(payload);
+    const shouldLinkPending = Boolean(pendingMatches.length && window.confirm(t('message.pendingPalletConfirm', {
+      part: `${payload.code} — ${payload.name}`,
+      count: pendingMatches.length
+    })));
+
     let removedItems = 0;
     let savedPart = null;
+    let linkedPendingItems = 0;
     if (id) {
       const part = state.parts.find(candidate => candidate.id === id);
       if (!part) return;
@@ -1573,14 +1768,22 @@
       savedPart = { id: uid('part'), ...payload, projectIds: [...new Set(nextProjectIds)] };
       state.parts.push(savedPart);
       addActivity('activity.masterAdded', `${payload.code} × ${payload.quantity}`);
+      if (shouldLinkPending) {
+        linkedPendingItems = linkPendingStockItemsToPart(savedPart);
+        addActivity('activity.pendingStockLinked', `${payload.code} × ${linkedPendingItems}`);
+      }
     }
     const returnPalletId = stockPartReturnPalletId;
     stockPartReturnPalletId = null;
     closeDialog(els.partDialog);
     renderAll();
-    if (!id && returnPalletId && getStockPallet(returnPalletId)) {
+    if (!id && returnPalletId && getStockPallet(returnPalletId) && !getStockPallet(returnPalletId).items.some(item => item.partId === savedPart.id)) {
       openStockItemDialog(returnPalletId, savedPart.id);
       showToast(t('message.masterCreatedReturn'));
+      return;
+    }
+    if (linkedPendingItems) {
+      showToast(t('message.pendingPalletLinked', { count: linkedPendingItems, part: savedPart.code }));
       return;
     }
     showToast(removedItems ? t('message.partUpdatedRemoved', { count: removedItems }) : t(id ? 'message.masterUpdated' : 'message.masterAdded'));
@@ -1686,26 +1889,38 @@
     event.preventDefault();
     const data = new FormData(els.stockItemForm);
     const pallet = getStockPallet(String(data.get('palletId') || ''));
-    const part = state.parts.find(candidate => candidate.id === String(data.get('partId') || ''));
+    const raw = els.stockPartSearch.value.trim();
+    const result = resolveStockPartSearch(raw);
+    const part = state.parts.find(candidate => candidate.id === String(data.get('partId') || '')) || result.part;
     const quantity = Math.max(1, Math.floor(Number(data.get('quantity')) || 1));
-    if (!pallet || !part) return showToast(t('message.chooseOrCreatePart'));
-    if (pallet.items.some(item => item.partId === part.id)) return showToast(t('message.palletPartDuplicate'));
-    pallet.items.push({ id: uid('stock_item'), partId: part.id, quantity });
-    addActivity('activity.partAddedStockPallet', `${part.code} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+    if (!pallet || !raw) return showToast(t('message.chooseOrCreatePart'));
+    if (result.reason === 'ambiguous' && !part) return showToast(t('stockItem.ambiguous'));
+    if (part) {
+      if (pallet.items.some(item => item.partId === part.id)) return showToast(t('message.palletPartDuplicate'));
+      pallet.items.push({ id: uid('stock_item'), partId: part.id, quantity });
+      addActivity('activity.partAddedStockPallet', `${part.code} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+    } else {
+      const pending = parsePendingPartInput(raw);
+      const aliases = [pending.pendingCode, pending.pendingName].map(normalizePartSearch).filter(Boolean);
+      if (!aliases.length) return showToast(t('message.chooseOrCreatePart'));
+      if (pallet.items.some(item => isPendingStockItem(item) && pendingStockItemAliases(item).some(alias => aliases.includes(alias)))) return showToast(t('stock.unregisteredAlreadyOnPallet'));
+      pallet.items.push({ id: uid('stock_item'), partId: '', ...pending, quantity });
+      addActivity('activity.unregisteredStockPartAdded', `${pending.pendingName || pending.pendingCode} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+    }
     expandedStockPalletIds.add(pallet.id);
     openStockPalletId = null;
     closeDialog(els.stockItemDialog);
     renderAll();
-    showToast(t(part.overflowing ? 'message.partAddedOverflowing' : 'message.partAddedPallet'));
+    showToast(part ? t(part.overflowing ? 'message.partAddedOverflowing' : 'message.partAddedPallet') : t('message.unregisteredPartAdded'));
   });
 
   els.createStockMasterPartBtn.addEventListener('click', () => {
     const palletId = $('[name="palletId"]', els.stockItemForm).value;
     const raw = els.stockPartSearch.value.trim();
     if (!palletId || !raw) return;
-    const separator = raw.indexOf(' — ');
-    const code = (separator >= 0 ? raw.slice(0, separator) : raw).trim().toUpperCase();
-    const name = separator >= 0 ? raw.slice(separator + 3).trim() : '';
+    const pending = parsePendingPartInput(raw);
+    const code = pending.pendingCode;
+    const name = pending.pendingName || pending.pendingCode;
     closeDialog(els.stockItemDialog);
     openPartDialog(null, { code, name, quantity: 0, returnPalletId: palletId });
   });
@@ -1831,6 +2046,30 @@
   });
 
   [els.inventorySearch, els.inventoryProjectFilter, els.inventoryStockFilter, els.inventorySort, els.inventoryCategoryFilter].forEach(control => control.addEventListener(control === els.inventorySearch ? 'input' : 'change', renderInventory));
+
+  els.pendingPalletMatchNotice.addEventListener('click', event => {
+    const button = event.target.closest('button[data-pending-action]');
+    if (!button) return;
+    if (button.dataset.pendingAction === 'create') {
+      const match = pendingStockMatchesForText(els.inventorySearch.value)[0];
+      if (!match) return renderInventory();
+      openPartDialog(null, {
+        code: match.item.pendingCode || '',
+        name: match.item.pendingName || match.item.pendingCode || '',
+        quantity: 0
+      });
+      return;
+    }
+    const part = state.parts.find(candidate => candidate.id === button.dataset.partId);
+    if (!part) return renderInventory();
+    const matches = pendingStockMatchesForPart(part);
+    if (!matches.length) return renderInventory();
+    if (!window.confirm(t('message.pendingPalletConfirm', { part: `${part.code} — ${part.name}`, count: matches.length }))) return;
+    const linkedCount = linkPendingStockItemsToPart(part);
+    addActivity('activity.pendingStockLinked', `${part.code} × ${linkedCount}`);
+    renderAll();
+    showToast(t('message.pendingPalletLinked', { count: linkedCount, part: part.code }));
+  });
 
   function handleInventoryAction(event) {
     const button = event.target.closest('button[data-action]');

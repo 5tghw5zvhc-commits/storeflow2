@@ -533,6 +533,118 @@
     'message.languageChanged': 'Zmieniono język na {language}.', 'message.createOrderFirst': 'Najpierw utwórz zlecenie.', 'message.projectDeletedConfirm': 'Usunąć „{name}”? Jego zlecenia zostaną usunięte, a skompletowane ilości wrócą do stanu. Części główne pozostaną w Inwentarzu.', 'message.projectDeleted': 'Projekt usunięty. Wspólne części główne zachowano.', 'message.orderDeletedConfirm': 'Usunąć „{name}”? Skompletowane ilości wrócą do wspólnego stanu.', 'message.orderDeleted': 'Zlecenie usunięte, skompletowany stan przywrócony.', 'message.deletePartReferences': 'Usunąć część główną {code} — {name}? Zostanie usunięta ze wszystkich projektów i list montażowych{stored}. Skompletowane ilości nie zostaną przywrócone, ponieważ rekord główny jest usuwany.', 'message.storedLinesSuffix': ', a także z {count} pozycji palet w sklepie', 'message.deletePartSimple': 'Usunąć część główną {code} — {name} ze wszystkich projektów?', 'message.partDeleted': 'Część główna została usunięta wszędzie.', 'message.overflowing': 'Część oznaczono jako przepełnienie.', 'message.spaceAvailable': 'Część oznaczono jako mającą wolne miejsce.', 'message.storedMinimum': 'Ilość w sklepie musi wynosić co najmniej 1.', 'message.storedUpdated': 'Zaktualizowano ilość w sklepie.', 'message.removeStoredConfirm': 'Usunąć {part} z dostawy {delivery}, palety {pallet}?', 'message.storedPartRemoved': 'Część usunięto z palety w sklepie.', 'message.deletePalletConfirm': 'Usunąć dostawę {delivery}, paletę {pallet} i wszystkie ilości części na niej?', 'message.palletDeleted': 'Paleta w sklepie została usunięta.', 'message.partMissing': 'Ta część główna już nie istnieje.', 'message.notEnough': 'Za mało {code}. Potrzeba {needed}; dostępne wspólne sztuki: {available}.', 'message.neededMinimum': 'Potrzebna ilość musi wynosić co najmniej 1.', 'message.notEnoughIncrease': 'Za mało {code}. Zwiększenie tej pozycji wymaga jeszcze {difference}; dostępne wspólne sztuki: {available}.', 'message.amountStockUpdated': 'Zaktualizowano potrzebną ilość i wspólny stan.', 'message.amountUpdated': 'Zaktualizowano potrzebną ilość.', 'message.photoPreparing': 'Przygotowywanie zdjęcia…', 'message.photoReady': 'Zdjęcie projektu jest gotowe.', 'message.photoFailed': 'Nie udało się użyć zdjęcia. Spróbuj pliku JPG lub PNG.', 'message.photoStillPreparing': 'Zdjęcie jest nadal przygotowywane.', 'message.projectUpdated': 'Projekt zaktualizowany.', 'message.projectCreated': 'Projekt utworzony.', 'message.assemblyBoth': 'Wpisz oba numery montażu, na przykład 2 / 5.', 'message.assemblyOrder': 'Numer części nie może być większy niż łączna liczba części.', 'message.duplicateNotSaved': 'Duplikat nie został zapisany: {code} z parametrami {numbering} już istnieje.', 'message.masterCreatedReturn': 'Część główna została utworzona. Teraz dodaj jej ilość na palecie.', 'message.partUpdatedRemoved': 'Część zaktualizowana. Z niepowiązanych projektów usunięto pozycji listy: {count}.', 'message.masterUpdated': 'Część główna zaktualizowana wszędzie.', 'message.masterAdded': 'Część główna dodana.', 'message.projectPartsRemoved': 'Części projektu zapisane. Usunięto starych pozycji listy: {count}.', 'message.projectPartsSaved': 'Części projektu zapisane.', 'message.orderCreated': 'Zlecenie montażu utworzone.', 'message.chooseProjectPart': 'Wybierz część dodaną do tego projektu.', 'message.checklistDuplicate': 'Ta część jest już na liście. Zmień potrzebną ilość bezpośrednio na liście.', 'message.partAddedShort': 'Część dodana, ale wspólny stan jest niewystarczający.', 'message.partAddedLow': 'Część dodana. Wspólny stan jest niski lub bliski niskiemu progowi.', 'message.partAddedChecklist': 'Część dodana do listy.', 'message.palletDuplicate': 'Ta kombinacja numeru dostawy i palety już istnieje.', 'message.palletUpdated': 'Szczegóły palety zaktualizowane.', 'message.palletCreated': 'Paleta utworzona. Teraz dodaj jej części.', 'message.chooseOrCreatePart': 'Wybierz istniejącą część główną lub najpierw ją utwórz.', 'message.palletPartDuplicate': 'Ta część jest już na palecie. Zmień jej ilość na liście palety.', 'message.partAddedOverflowing': 'Część dodana. Jest obecnie oznaczona jako przepełnienie.', 'message.partAddedPallet': 'Część dodana do palety w sklepie.', 'message.projectOpened': 'Otwarto projekt {name}.', 'message.backupExported': 'Kopia zapasowa wyeksportowana.', 'message.importConfirm': 'Zaimportować tę kopię i zastąpić wszystkie bieżące dane lokalne?', 'message.backupImported': 'Kopia zapasowa została pomyślnie zaimportowana.', 'message.backupInvalid': 'Nie udało się zaimportować pliku. Użyj prawidłowej kopii StoreFlow.', 'message.resetConfirm': 'Usunąć wszystkie dane StoreFlow na tym urządzeniu i wrócić do pustego obszaru roboczego?', 'message.resetDone': 'Dane lokalne zostały zresetowane.'
   };
 
+  const featureUpdates = {
+    en: {
+      'activity.pendingStockLinked': 'Unregistered pallet part linked to Master Inventory',
+      'activity.unregisteredStockPartAdded': 'Unregistered part added to stored pallet',
+      'inventory.pendingFound': '{count} pallet line(s) for “{part}” were registered earlier without a Master Inventory link.',
+      'inventory.pendingCreateHelp': 'Create the master part, then confirm that these pallet entries belong to it.',
+      'inventory.pendingLinkHelp': 'A matching master part exists: {code} — {name}. Confirm to connect the pallet records.',
+      'inventory.pendingAmbiguousHelp': 'More than one master part matches. Refine the code or name before linking.',
+      'inventory.pendingCreate': 'Create master part',
+      'inventory.pendingLink': 'Confirm & link',
+      'stock.chooseMaster': 'Choose a master part by code, name or measurements, or type a new part name.',
+      'stock.noExactMatch': 'No Master Inventory match. Add this as unregistered now and link it later, or create its master record first.',
+      'stock.unregistered': 'Unregistered',
+      'stock.unregisteredAlreadyOnPallet': 'This unregistered part is already on the pallet. Edit its quantity in the pallet list.',
+      'stock.unregisteredDetail': 'Not linked to Master Inventory yet. Search for this name or code in Inventory to create or confirm the master record.',
+      'stock.optionDetailsWithSize': '{size} · {received} received · {stored} at store',
+      'stock.planner.searchPlaceholder': 'Type a part code, name or measurements; separate several with commas',
+      'stockItem.search': 'Part code, name or measurements',
+      'stockItem.searchPlaceholder': 'Start typing a code, name or measurements',
+      'stockItem.unknown': 'This part is not in Master Inventory. Add it as unregistered now, or create its master record first.',
+      'stockItem.ambiguous': 'Several master parts match. Choose an exact code or name from the list.',
+      'stockItem.addUnregistered': 'Add as unregistered',
+      'message.chooseOrCreatePart': 'Choose a master part or enter a name or code to add it as unregistered.',
+      'message.unregisteredPartAdded': 'Unregistered part added to the pallet. Link it later from Master Inventory without losing its pallet quantity.',
+      'message.pendingPalletConfirm': '“{part}” was registered earlier on {count} pallet line(s). Is this the same physical part? Confirm to connect those pallet records to this master part.',
+      'message.pendingPalletLinked': 'Connected {count} pallet line(s) to {part}.'
+    },
+    uk: {
+      'activity.pendingStockLinked': 'Незареєстровану деталь палети пов’язано з основним інвентарем',
+      'activity.unregisteredStockPartAdded': 'Незареєстровану деталь додано до палети в магазині',
+      'inventory.pendingFound': '{count} позицій палет для «{part}» було зареєстровано раніше без зв’язку з основним інвентарем.',
+      'inventory.pendingCreateHelp': 'Створіть основну деталь, а потім підтвердьте, що ці позиції палет належать їй.',
+      'inventory.pendingLinkHelp': 'Знайдено відповідну основну деталь: {code} — {name}. Підтвердьте, щоб пов’язати записи палет.',
+      'inventory.pendingAmbiguousHelp': 'Збігається кілька основних деталей. Уточніть код або назву перед пов’язуванням.',
+      'inventory.pendingCreate': 'Створити основну деталь',
+      'inventory.pendingLink': 'Підтвердити й пов’язати',
+      'stock.chooseMaster': 'Виберіть основну деталь за кодом, назвою чи розмірами або введіть назву нової деталі.',
+      'stock.noExactMatch': 'Збігу в основному інвентарі немає. Додайте деталь як незареєстровану та пов’яжіть пізніше або спочатку створіть основний запис.',
+      'stock.unregistered': 'Не зареєстровано',
+      'stock.unregisteredAlreadyOnPallet': 'Ця незареєстрована деталь уже є на палеті. Змініть її кількість у списку палети.',
+      'stock.unregisteredDetail': 'Ще не пов’язано з основним інвентарем. Знайдіть цю назву або код в Інвентарі, щоб створити чи підтвердити основний запис.',
+      'stock.optionDetailsWithSize': '{size} · отримано: {received} · у магазині: {stored}',
+      'stock.planner.searchPlaceholder': 'Введіть код, назву або розміри; кілька деталей розділіть комами',
+      'stockItem.search': 'Код, назва або розміри деталі',
+      'stockItem.searchPlaceholder': 'Почніть вводити код, назву або розміри',
+      'stockItem.unknown': 'Цієї деталі немає в основному інвентарі. Додайте її як незареєстровану або спочатку створіть основний запис.',
+      'stockItem.ambiguous': 'Збігається кілька основних деталей. Виберіть точний код або назву зі списку.',
+      'stockItem.addUnregistered': 'Додати без реєстрації',
+      'message.chooseOrCreatePart': 'Виберіть основну деталь або введіть назву чи код, щоб додати її без реєстрації.',
+      'message.unregisteredPartAdded': 'Незареєстровану деталь додано до палети. Пізніше пов’яжіть її в основному інвентарі без втрати кількості на палеті.',
+      'message.pendingPalletConfirm': '«{part}» було зареєстровано раніше в {count} позиціях палет. Це та сама фізична деталь? Підтвердьте, щоб пов’язати записи палет із цією основною деталлю.',
+      'message.pendingPalletLinked': 'Пов’язано позицій палет: {count} — із деталлю {part}.'
+    },
+    ru: {
+      'activity.pendingStockLinked': 'Незарегистрированная деталь палеты связана с основным инвентарём',
+      'activity.unregisteredStockPartAdded': 'Незарегистрированная деталь добавлена на палету в магазине',
+      'inventory.pendingFound': '{count} позиций палет для «{part}» были зарегистрированы ранее без связи с основным инвентарём.',
+      'inventory.pendingCreateHelp': 'Создайте основную деталь, затем подтвердите, что эти позиции палет относятся к ней.',
+      'inventory.pendingLinkHelp': 'Найдена подходящая основная деталь: {code} — {name}. Подтвердите, чтобы связать записи палет.',
+      'inventory.pendingAmbiguousHelp': 'Совпадают несколько основных деталей. Уточните код или название перед связыванием.',
+      'inventory.pendingCreate': 'Создать основную деталь',
+      'inventory.pendingLink': 'Подтвердить и связать',
+      'stock.chooseMaster': 'Выберите основную деталь по коду, названию или размерам либо введите название новой детали.',
+      'stock.noExactMatch': 'Совпадения в основном инвентаре нет. Добавьте деталь как незарегистрированную и свяжите позже либо сначала создайте основную запись.',
+      'stock.unregistered': 'Не зарегистрировано',
+      'stock.unregisteredAlreadyOnPallet': 'Эта незарегистрированная деталь уже есть на палете. Измените её количество в списке палеты.',
+      'stock.unregisteredDetail': 'Ещё не связано с основным инвентарём. Найдите это название или код в Инвентаре, чтобы создать или подтвердить основную запись.',
+      'stock.optionDetailsWithSize': '{size} · получено: {received} · в магазине: {stored}',
+      'stock.planner.searchPlaceholder': 'Введите код, название или размеры; несколько деталей разделяйте запятыми',
+      'stockItem.search': 'Код, название или размеры детали',
+      'stockItem.searchPlaceholder': 'Начните вводить код, название или размеры',
+      'stockItem.unknown': 'Этой детали нет в основном инвентаре. Добавьте её как незарегистрированную либо сначала создайте основную запись.',
+      'stockItem.ambiguous': 'Совпадают несколько основных деталей. Выберите точный код или название из списка.',
+      'stockItem.addUnregistered': 'Добавить без регистрации',
+      'message.chooseOrCreatePart': 'Выберите основную деталь или введите название либо код, чтобы добавить её без регистрации.',
+      'message.unregisteredPartAdded': 'Незарегистрированная деталь добавлена на палету. Позже свяжите её в основном инвентаре без потери количества на палете.',
+      'message.pendingPalletConfirm': '«{part}» была зарегистрирована ранее в {count} позициях палет. Это та же физическая деталь? Подтвердите, чтобы связать записи палет с этой основной деталью.',
+      'message.pendingPalletLinked': 'Связано позиций палет: {count} — с деталью {part}.'
+    },
+    pl: {
+      'activity.pendingStockLinked': 'Niezarejestrowana część palety połączona z głównym inwentarzem',
+      'activity.unregisteredStockPartAdded': 'Niezarejestrowana część dodana do palety w sklepie',
+      'inventory.pendingFound': '{count} pozycji palet dla „{part}” zarejestrowano wcześniej bez połączenia z głównym inwentarzem.',
+      'inventory.pendingCreateHelp': 'Utwórz część główną, a następnie potwierdź, że te pozycje palet należą do niej.',
+      'inventory.pendingLinkHelp': 'Istnieje pasująca część główna: {code} — {name}. Potwierdź, aby połączyć zapisy palet.',
+      'inventory.pendingAmbiguousHelp': 'Pasuje więcej niż jedna część główna. Doprecyzuj kod lub nazwę przed połączeniem.',
+      'inventory.pendingCreate': 'Utwórz część główną',
+      'inventory.pendingLink': 'Potwierdź i połącz',
+      'stock.chooseMaster': 'Wybierz część główną według kodu, nazwy lub wymiarów albo wpisz nazwę nowej części.',
+      'stock.noExactMatch': 'Brak dopasowania w głównym inwentarzu. Dodaj część jako niezarejestrowaną i połącz ją później albo najpierw utwórz główny rekord.',
+      'stock.unregistered': 'Niezarejestrowana',
+      'stock.unregisteredAlreadyOnPallet': 'Ta niezarejestrowana część jest już na palecie. Zmień jej ilość na liście palety.',
+      'stock.unregisteredDetail': 'Nie jest jeszcze połączona z głównym inwentarzem. Wyszukaj tę nazwę lub kod w Inwentarzu, aby utworzyć albo potwierdzić główny rekord.',
+      'stock.optionDetailsWithSize': '{size} · odebrano: {received} · w sklepie: {stored}',
+      'stock.planner.searchPlaceholder': 'Wpisz kod, nazwę lub wymiary; kilka części oddziel przecinkami',
+      'stockItem.search': 'Kod, nazwa lub wymiary części',
+      'stockItem.searchPlaceholder': 'Zacznij wpisywać kod, nazwę lub wymiary',
+      'stockItem.unknown': 'Tej części nie ma w głównym inwentarzu. Dodaj ją jako niezarejestrowaną albo najpierw utwórz główny rekord.',
+      'stockItem.ambiguous': 'Pasuje kilka części głównych. Wybierz z listy dokładny kod lub nazwę.',
+      'stockItem.addUnregistered': 'Dodaj bez rejestracji',
+      'message.chooseOrCreatePart': 'Wybierz część główną albo wpisz nazwę lub kod, aby dodać ją bez rejestracji.',
+      'message.unregisteredPartAdded': 'Niezarejestrowana część została dodana do palety. Połącz ją później w głównym inwentarzu bez utraty ilości na palecie.',
+      'message.pendingPalletConfirm': '„{part}” była wcześniej zarejestrowana w {count} pozycjach palet. Czy to ta sama fizyczna część? Potwierdź, aby połączyć zapisy palet z tą częścią główną.',
+      'message.pendingPalletLinked': 'Połączono {count} pozycji palet z częścią {part}.'
+    }
+  };
+
+  Object.assign(en, featureUpdates.en);
+  Object.assign(uk, featureUpdates.uk);
+  Object.assign(ru, featureUpdates.ru);
+  Object.assign(pl, featureUpdates.pl);
+
   const translations = { en, uk, ru, pl };
 
   function t(language, key, params = {}) {
