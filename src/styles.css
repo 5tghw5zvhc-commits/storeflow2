@@ -174,7 +174,7 @@ button:disabled { opacity: .45; cursor: not-allowed; transform: none !important;
 .span-2 { grid-column: span 1; }
 .panel-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
 .panel h3 { margin: 0; font-size: 20px; }
-.category-progress { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.category-progress { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .category-card { border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
 .category-card .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .category-card strong { font-size: 14px; }

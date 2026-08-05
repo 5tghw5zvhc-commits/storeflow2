@@ -37,7 +37,7 @@ for (const fragment of forbiddenHtml) {
   if (html.includes(fragment)) throw new Error(`index.html still contains removed interface: ${fragment}`);
 }
 
-const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="inventoryCategoryFilter"', 'id="pendingPalletMatchNotice"', 'id="stockItemSubmitBtn"', 'id="stockPartSuggestions"', 'aria-autocomplete="list"', 'aria-controls="stockPartSuggestions"', 'class="inventory-fab"', 'class="inventory-fab stock-fab"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'data-i18n-aria="stock.planner.aria"', 'data-settings-tab="general"', 'data-settings-tab="data"', 'data-settings-tab="tips"', 'id="settingsDataPanel"', 'id="settingsTipsPanel"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
+const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="inventoryCategoryFilter"', 'data-i18n="category.Infills" value="Infills"', 'data-i18n="category.Other" value="Other"', 'id="pendingPalletMatchNotice"', 'id="stockItemSubmitBtn"', 'id="stockPartSuggestions"', 'aria-autocomplete="list"', 'aria-controls="stockPartSuggestions"', 'class="inventory-fab"', 'class="inventory-fab stock-fab"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'data-i18n-aria="stock.planner.aria"', 'data-settings-tab="general"', 'data-settings-tab="data"', 'data-settings-tab="tips"', 'id="settingsDataPanel"', 'id="settingsTipsPanel"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
 for (const fragment of requiredHtml) {
   if (!html.includes(fragment)) throw new Error(`index.html is missing requested interface: ${fragment}`);
 }
@@ -105,6 +105,15 @@ if (!app.includes('stockPartSuggestionMatches') || !app.includes('renderStockPar
 }
 if (!app.includes('matchStatus') || !app.includes('candidatePartIds') || !app.includes('stockPlannerReferenceForItem') || !app.includes("t('stockItem.addAsTyped')")) {
   throw new Error('Ambiguous pallet records must remain marked, searchable and linkable.');
+}
+if (!app.includes("const CATEGORIES = ['Desk', 'Bed', 'Wardrobe', 'Kitchen', 'Infills', 'Other']") || !app.includes('orderItemCategory')) {
+  throw new Error('Assembly orders must include all six room-part sections and follow each master part category.');
+}
+if (!app.includes('partInProject(part, state.activeProjectId) && part.category === category') || app.includes("part.category === category || part.category === 'Other'")) {
+  throw new Error('Each Assembly Order section must offer only parts from its exact category.');
+}
+if (!app.includes('category: part.category, quantityNeeded')) {
+  throw new Error('New checklist lines must store the selected master part category.');
 }
 if (/showToast\(\s*['"`]/.test(app) || /window\.confirm\(\s*['"`]/.test(app)) {
   throw new Error('Toast and confirmation text must come from the translation catalogue.');

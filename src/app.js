@@ -4,7 +4,7 @@
   const STORAGE_KEY = 'storeflow-state-v1';
   const I18N = window.StoreFlowI18n;
   const LANGUAGE_CODES = new Set(I18N.languages.map(language => language.code));
-  const CATEGORIES = ['Desk', 'Bed', 'Wardrobe', 'Kitchen'];
+  const CATEGORIES = ['Desk', 'Bed', 'Wardrobe', 'Kitchen', 'Infills', 'Other'];
   let storageAvailable = true;
   let currentView = 'dashboard';
   let toastTimer;
@@ -32,6 +32,11 @@
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+
+  function normalizeCategory(value) {
+    const category = String(value || 'Other');
+    return CATEGORIES.includes(category) ? category : 'Other';
+  }
 
   function storageGet(key) {
     try {
@@ -361,7 +366,7 @@
           id: oldPart.id || uid('part'),
           code,
           name: String(oldPart.name || 'Unnamed part'),
-          category: String(oldPart.category || 'Other'),
+          category: normalizeCategory(oldPart.category),
           quantity: Math.max(0, Number(oldPart.quantity) || 0),
           length: dimensions.length,
           width: dimensions.width,
@@ -389,6 +394,7 @@
 
     const parts = [...grouped.values()];
     const validPartIds = new Set(parts.map(part => part.id));
+    const categoryByPartId = new Map(parts.map(part => [part.id, part.category]));
     const orders = (Array.isArray(source.orders) ? source.orders : [])
       .filter(order => validProjectIds.has(order.projectId))
       .map(order => ({
@@ -397,13 +403,16 @@
         name: String(order.name || 'Untitled order'),
         notes: String(order.notes || ''),
         createdAt: order.createdAt || new Date().toISOString(),
-        items: (Array.isArray(order.items) ? order.items : []).map(item => ({
-          id: item.id || uid('item'),
-          partId: oldToNew.get(item.partId) || item.partId,
-          category: String(item.category || 'Other'),
-          quantityNeeded: Math.max(1, Number(item.quantityNeeded) || 1),
-          packed: Boolean(item.packed)
-        })).filter(item => validPartIds.has(item.partId))
+        items: (Array.isArray(order.items) ? order.items : []).map(item => {
+          const partId = oldToNew.get(item.partId) || item.partId;
+          return {
+            id: item.id || uid('item'),
+            partId,
+            category: categoryByPartId.get(partId) || normalizeCategory(item.category),
+            quantityNeeded: Math.max(1, Number(item.quantityNeeded) || 1),
+            packed: Boolean(item.packed)
+          };
+        }).filter(item => validPartIds.has(item.partId))
       }));
 
     const stockPallets = (Array.isArray(source.stockPallets) ? source.stockPallets : (Array.isArray(source.storePallets) ? source.storePallets : []))
@@ -469,6 +478,11 @@
 
   function categoryLabel(category) {
     return t(`category.${category}`);
+  }
+
+  function orderItemCategory(item) {
+    const part = state.parts.find(candidate => candidate.id === item?.partId);
+    return normalizeCategory(part?.category || item?.category);
   }
 
   function applyTranslations() {
@@ -703,7 +717,7 @@
 
     const order = getSelectedOrder();
     els.categoryProgress.innerHTML = CATEGORIES.map(category => {
-      const items = order?.items.filter(item => item.category === category) || [];
+      const items = order?.items.filter(item => orderItemCategory(item) === category) || [];
       const packed = items.filter(item => item.packed).length;
       const percentage = items.length ? Math.round((packed / items.length) * 100) : 0;
       return `<div class="category-card"><div class="top"><strong>${esc(categoryLabel(category))}</strong><span>${packed}/${items.length}</span></div><div class="progress-track"><div class="progress-fill" style="width:${percentage}%"></div></div></div>`;
@@ -868,7 +882,7 @@
     els.orderSummary.innerHTML = `<div class="summary-chip"><span>${esc(t('orders.requiredLines'))}</span><strong>${total}</strong></div><div class="summary-chip"><span>${esc(t('orders.packedLines'))}</span><strong>${packed}</strong></div><div class="summary-chip"><span>${esc(t('orders.shortages'))}</span><strong>${shortages}</strong></div>`;
 
     els.orderBoards.innerHTML = CATEGORIES.map(category => {
-      const items = order.items.filter(item => item.category === category);
+      const items = order.items.filter(item => orderItemCategory(item) === category);
       const itemHtml = items.length ? items.map(item => {
         const part = state.parts.find(candidate => candidate.id === item.partId);
         const available = part?.quantity ?? 0;
@@ -1447,7 +1461,7 @@
     if (!order) return showToast(t('message.createOrderFirst'));
     const includedPartIds = new Set(order.items.map(item => item.partId));
     const matchingParts = state.parts
-      .filter(part => partInProject(part, state.activeProjectId) && (part.category === category || part.category === 'Other'))
+      .filter(part => partInProject(part, state.activeProjectId) && part.category === category)
       .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
     const availableParts = matchingParts.filter(part => !includedPartIds.has(part.id));
     const select = $('[name="partId"]', els.orderItemForm);
@@ -1861,7 +1875,7 @@
       quantity: Math.max(0, Number(data.get('quantity')) || 0),
       ...dimensions,
       size: legacySizeValue(dimensions),
-      category: String(data.get('category') || 'Other'),
+      category: normalizeCategory(data.get('category')),
       assemblyPosition: position,
       assemblyTotal: total,
       overflowing: data.get('overflowing') === 'on',
@@ -1883,6 +1897,9 @@
       if (!part) return;
       removedItems = setPartProjects(part, nextProjectIds);
       Object.assign(part, payload);
+      state.orders.forEach(order => order.items.forEach(item => {
+        if (item.partId === part.id) item.category = part.category;
+      }));
       savedPart = part;
       addActivity('activity.masterUpdated', `${payload.code} — ${payload.name}`);
     } else {
@@ -1958,13 +1975,13 @@
     const quantityNeeded = Math.max(1, Number(data.get('quantityNeeded')) || 1);
     const category = String(data.get('category') || 'Other');
     const part = state.parts.find(candidate => candidate.id === partId);
-    if (!part || !partInProject(part, state.activeProjectId)) return showToast(t('message.chooseProjectPart'));
+    if (!part || !partInProject(part, state.activeProjectId) || part.category !== category) return showToast(t('message.chooseProjectPart'));
     if (order.items.some(item => item.partId === partId)) {
       closeDialog(els.orderItemDialog);
       renderAll();
       return showToast(t('message.checklistDuplicate'));
     }
-    order.items.push({ id: uid('item'), partId, category, quantityNeeded, packed: false });
+    order.items.push({ id: uid('item'), partId, category: part.category, quantityNeeded, packed: false });
     addActivity('activity.partAddedOrder', `${part.code} × ${quantityNeeded} · ${order.name}`);
     closeDialog(els.orderItemDialog);
     renderAll();
