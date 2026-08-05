@@ -37,7 +37,7 @@ for (const fragment of forbiddenHtml) {
   if (html.includes(fragment)) throw new Error(`index.html still contains removed interface: ${fragment}`);
 }
 
-const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="inventoryCategoryFilter"', 'data-i18n="category.Infills" value="Infills"', 'data-i18n="category.Other" value="Other"', 'id="pendingPalletMatchNotice"', 'id="stockItemSubmitBtn"', 'id="stockPartSuggestions"', 'aria-autocomplete="list"', 'aria-controls="stockPartSuggestions"', 'class="inventory-fab"', 'class="inventory-fab stock-fab"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'data-i18n-aria="stock.planner.aria"', 'data-settings-tab="general"', 'data-settings-tab="data"', 'data-settings-tab="tips"', 'id="settingsDataPanel"', 'id="settingsTipsPanel"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
+const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="inventoryCategoryFilter"', 'data-i18n="category.Infills" value="Infills"', 'data-i18n="category.Other" value="Other"', 'id="pendingPalletMatchNotice"', 'id="stockItemSubmitBtn"', 'id="stockPartSuggestions"', 'id="stockPartPack"', 'name="packCode"', 'pattern="[1-9][1-9]"', 'aria-autocomplete="list"', 'aria-controls="stockPartSuggestions"', 'class="inventory-fab"', 'class="inventory-fab stock-fab"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="stockPackSearch"', 'id="stockPlannerPackOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'data-i18n-aria="stock.planner.aria"', 'data-settings-tab="general"', 'data-settings-tab="data"', 'data-settings-tab="tips"', 'id="settingsDataPanel"', 'id="settingsTipsPanel"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
 for (const fragment of requiredHtml) {
   if (!html.includes(fragment)) throw new Error(`index.html is missing requested interface: ${fragment}`);
 }
@@ -102,6 +102,15 @@ if (!app.includes('pendingCode') || !app.includes('pendingName') || !app.include
 }
 if (!app.includes('stockPartSuggestionMatches') || !app.includes('renderStockPartSuggestions') || !app.includes('chooseStockPartSuggestion')) {
   throw new Error('Live pallet-part suggestions or exact suggestion selection is missing.');
+}
+if (!app.includes('normalizePackDigits') || !app.includes('packDigitsForPart') || !app.includes('codeWithPack') || !app.includes('packCode')) {
+  throw new Error('Pallet pack-number normalization, identity display or persistence is missing.');
+}
+if (!app.includes("return `${identity}|pack:${normalizePackDigits(item?.packCode) || 'none'}`") || !app.includes("resolveUniquePartSearch(value, packDigits = '')")) {
+  throw new Error('Pallet pack numbers must distinguish pending records and filter Master Inventory matches.');
+}
+if (!app.includes('els.stockPartPack') || !app.includes('els.stockPackSearch') || !app.includes('stock.planner.packCountMismatch')) {
+  throw new Error('Pack-aware pallet entry or the paired planner search is missing.');
 }
 if (!app.includes('matchStatus') || !app.includes('candidatePartIds') || !app.includes('stockPlannerReferenceForItem') || !app.includes("t('stockItem.addAsTyped')")) {
   throw new Error('Ambiguous pallet records must remain marked, searchable and linkable.');

@@ -277,8 +277,10 @@ tbody tr:last-child td { border-bottom: 0; }
 .stock-planner-heading .eyebrow { margin: 0; }
 .stock-planner-clear { min-height: 38px; padding: 8px 13px; }
 .stock-search-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 12px 0 16px; }
-.stock-search-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
-.stock-search-controls .primary { white-space: nowrap; }
+.stock-search-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(130px, 180px) auto; align-items: end; gap: 8px; }
+.stock-search-controls .primary { min-height: 44px; white-space: nowrap; }
+.stock-planner-field { min-width: 0; display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 900; letter-spacing: .035em; text-transform: uppercase; }
+.stock-planner-field input { width: 100%; min-width: 0; text-transform: none; letter-spacing: normal; }
 .stock-search-info { color: var(--muted); font-size: 12px; font-weight: 800; }
 .stock-selected-parts { display: flex; flex-wrap: wrap; gap: 7px; }
 .stock-part-chip { min-width: 0; display: inline-flex; align-items: center; gap: 8px; padding: 7px 7px 7px 9px; border: 1px solid #9bc9c2; border-radius: 12px; background: white; }
@@ -350,6 +352,15 @@ tbody tr:last-child td { border-bottom: 0; }
 .pending-candidate-link span { font-size: 10px; font-weight: 900; }
 .pending-candidate-link small { color: var(--muted); font-size: 9px; }
 .stock-part-chip.ambiguous-chip { border-color: #df985e; background: #fff7ef; }
+.stock-pack-badge { display: inline-flex; width: max-content; max-width: 100%; padding: 3px 6px; border: 1px solid #9bc9c2; border-radius: 999px; background: #edf8f6; color: var(--brand-dark); font-size: 9px; line-height: 1.2; font-weight: 900; white-space: nowrap; }
+.stock-pack-entry { display: grid; gap: 6px; }
+.stock-pack-entry > span:first-child { color: var(--text); font-size: 12px; font-weight: 800; }
+.stock-pack-entry small { color: var(--muted); font-size: 10px; line-height: 1.4; }
+.stock-pack-input { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: white; }
+.stock-pack-input:focus-within { border-color: #73b7ac; box-shadow: 0 0 0 3px rgba(15,118,110,.11); }
+.stock-pack-input b { padding-left: 13px; color: var(--brand); font-size: 18px; line-height: 1; }
+.stock-pack-input input { min-width: 0; border: 0; box-shadow: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; font-weight: 900; letter-spacing: .08em; }
+.stock-pack-input input:focus { box-shadow: none; }
 .stock-detail-dialog { width: min(820px, calc(100% - 28px)); max-height: calc(100dvh - 28px); }
 .stock-detail-content { padding: 20px; display: flex; flex-direction: column; gap: 15px; max-height: calc(100dvh - 28px); }
 .stock-detail-meta { display: flex; flex-wrap: wrap; gap: 7px; }

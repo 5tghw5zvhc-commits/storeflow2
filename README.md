@@ -16,13 +16,15 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - Dismissible master-inventory warnings and information banners.
 - Mark parts as overflowing when no additional storage space is available.
 - A separate Stock area for undelivered store pallets, identified by delivery and pallet number.
+- Every pallet line records a required two-digit pack suffix: `25` is displayed after the part code as `-25` and labelled **Pack 2/5**.
 - Pallet part entry shows live, tappable Master Inventory suggestions as each character is typed, including dimensions and assembly numbering to distinguish similar records.
 - When typed text matches several master parts, it can still be saved exactly as entered with a **Several matches** marker; the record stays searchable and can be linked to the correct master part later without losing its pallet quantity.
 - Compact two-column pallet cards expand downward on one tap. Their three-dot menus add parts, edit pallet details or delete, while stored quantities remain editable inside the expanded card.
 - A fixed floating add-pallet control replaces the old Stock toolbar button.
 - Persistent interface languages: English, Ukrainian, Russian and Polish.
 - Tabbed Settings separate preferences, data management and concise explanations of StoreFlow's shared-stock, checklist, pallet-planning and iPhone-storage rules.
-- Search for several required parts at once and receive an optimized pallet set that avoids overflowing stock first, consolidates required parts onto fewer pallets, and minimizes unrelated stock.
+- Search pallets with separate part-name/code and pack-number fields. Corresponding comma-separated pairs still support several required parts at once and feed the optimized pallet selector.
+- Receive an optimized pallet set that avoids overflowing stock first, consolidates required parts onto fewer pallets, and minimizes unrelated stock.
 - Recommendation cards identify primary and additional pallets, explain their requested-part coverage, and warn when an unavoidable pallet contains overflowing items.
 - Add unknown pallet contents immediately as unregistered name/code records. Searching or later creating the matching Master Inventory part prompts for confirmation and relinks every matching pallet quantity without losing data.
 - New master parts begin with no project selected; project links are always an explicit choice.

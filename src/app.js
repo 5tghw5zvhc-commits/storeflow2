@@ -154,6 +154,37 @@
       .trim();
   }
 
+  function normalizePackDigits(value) {
+    const raw = String(value ?? '').trim();
+    const fraction = raw.match(/^([1-9])\s*\/\s*([1-9])$/);
+    if (fraction) return `${fraction[1]}${fraction[2]}`;
+    const digits = raw.replace(/\D/g, '');
+    return /^[1-9]{2}$/.test(digits) ? digits : '';
+  }
+
+  function packDigitsForPart(part) {
+    const position = String(part?.assemblyPosition || '');
+    const total = String(part?.assemblyTotal || '');
+    return /^[1-9]$/.test(position) && /^[1-9]$/.test(total) ? `${position}${total}` : '';
+  }
+
+  function packFractionFromDigits(value) {
+    const digits = normalizePackDigits(value);
+    return digits ? `${digits[0]}/${digits[1]}` : '';
+  }
+
+  function partMatchesPack(part, packDigits) {
+    const normalized = normalizePackDigits(packDigits);
+    return !normalized || packDigitsForPart(part) === normalized;
+  }
+
+  function codeWithPack(code, packDigits) {
+    const raw = String(code || '').trim();
+    const digits = normalizePackDigits(packDigits);
+    if (!raw || !digits || raw.endsWith(`-${digits}`)) return raw;
+    return `${raw}-${digits}`;
+  }
+
   function partMeasurementAliases(part) {
     const dimensions = dimensionsFromPart(part);
     const ordered = [dimensions.length, dimensions.width, dimensions.height].filter(Boolean);
@@ -192,15 +223,16 @@
     return normalized.split(' ').every(token => haystack.includes(token));
   }
 
-  function resolveUniquePartSearch(value) {
+  function resolveUniquePartSearch(value, packDigits = '') {
     const normalized = normalizePartSearch(value);
     if (!normalized) return { part: null, reason: 'missing', matches: [] };
+    const eligibleParts = normalizePackDigits(packDigits) ? state.parts.filter(part => partMatchesPack(part, packDigits)) : state.parts;
     const byCode = (a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }) || a.name.localeCompare(b.name);
-    const exact = state.parts.filter(part => partLookupAliases(part).some(alias => normalizePartSearch(alias) === normalized)).sort(byCode);
+    const exact = eligibleParts.filter(part => partLookupAliases(part).some(alias => normalizePartSearch(alias) === normalized)).sort(byCode);
     if (exact.length === 1) return { part: exact[0], reason: '', matches: exact };
     if (exact.length > 1) return { part: null, reason: 'ambiguous', matches: exact };
     const tokens = normalized.split(' ');
-    const partial = state.parts.filter(part => {
+    const partial = eligibleParts.filter(part => {
       const haystack = normalizePartSearch(partLookupAliases(part).join(' '));
       return tokens.every(token => haystack.includes(token));
     }).sort(byCode);
@@ -208,7 +240,7 @@
     return { part: null, reason: partial.length ? 'ambiguous' : 'missing', matches: partial };
   }
 
-  function stockPartSuggestionMatches(value) {
+  function stockPartSuggestionMatches(value, packDigits = '') {
     const normalized = normalizePartSearch(value);
     if (!normalized) return [];
     const tokens = normalized.split(' ');
@@ -222,6 +254,7 @@
       return 3;
     };
     return state.parts
+      .filter(part => !normalizePackDigits(packDigits) || partMatchesPack(part, packDigits))
       .filter(part => {
         const haystack = normalizePartSearch(partLookupAliases(part).join(' '));
         return tokens.every(token => haystack.includes(token));
@@ -260,7 +293,8 @@
   }
 
   function pendingStockItemKey(item) {
-    return pendingStockItemAliases(item)[0] || `pending-${item?.id || ''}`;
+    const identity = pendingStockItemAliases(item)[0] || `pending-${item?.id || ''}`;
+    return `${identity}|pack:${normalizePackDigits(item?.packCode) || 'none'}`;
   }
 
   function stockPlannerReferenceForItem(item) {
@@ -269,9 +303,9 @@
 
   function stockPlannerEntryForReference(reference) {
     const part = state.parts.find(candidate => candidate.id === reference);
-    if (part) return { reference, part, item: null, label: part.code };
+    if (part) return { reference, part, item: null, label: `${part.code}${packDigitsForPart(part) ? ` · ${t('stock.packLabel', { pack: packFractionFromDigits(packDigitsForPart(part)) })}` : ''}` };
     const match = state.stockPallets.flatMap(pallet => pallet.items).find(item => isPendingStockItem(item) && stockPlannerReferenceForItem(item) === reference);
-    return match ? { reference, part: null, item: match, label: pendingStockItemLabel(match) } : null;
+    return match ? { reference, part: null, item: match, label: `${pendingStockItemLabel(match)}${normalizePackDigits(match.packCode) ? ` · ${t('stock.packLabel', { pack: packFractionFromDigits(match.packCode) })}` : ''}` } : null;
   }
 
   function stockPlannerReferenceLabel(reference) {
@@ -280,6 +314,8 @@
 
   function pendingStockItemMatchesPart(item, part) {
     if (!isPendingStockItem(item) || !part) return false;
+    const itemPack = normalizePackDigits(item.packCode);
+    if (itemPack && !partMatchesPack(part, itemPack)) return false;
     if (part.id && Array.isArray(item.candidatePartIds) && item.candidatePartIds.includes(part.id)) return true;
     const pendingAliases = new Set(pendingStockItemAliases(item));
     return [part.code, part.name, `${part.code} — ${part.name}`]
@@ -288,11 +324,12 @@
       .some(alias => pendingAliases.has(alias));
   }
 
-  function pendingStockMatchesForText(value) {
+  function pendingStockMatchesForText(value, packDigits = '') {
     const normalized = normalizePartSearch(value);
+    const normalizedPack = normalizePackDigits(packDigits);
     if (!normalized) return [];
     return state.stockPallets.flatMap(pallet => pallet.items
-      .filter(item => isPendingStockItem(item) && pendingStockItemAliases(item).includes(normalized))
+      .filter(item => isPendingStockItem(item) && pendingStockItemAliases(item).includes(normalized) && (!normalizedPack || normalizePackDigits(item.packCode) === normalizedPack))
       .map(item => ({ pallet, item })));
   }
 
@@ -311,11 +348,13 @@
       matches.forEach(item => {
         linkedCount += 1;
         if (masterItem && masterItem !== item) {
+          masterItem.packCode = normalizePackDigits(masterItem.packCode) || normalizePackDigits(item.packCode) || packDigitsForPart(part);
           masterItem.quantity += item.quantity;
           pallet.items = pallet.items.filter(candidate => candidate.id !== item.id);
           return;
         }
         item.partId = part.id;
+        item.packCode = normalizePackDigits(item.packCode) || packDigitsForPart(part);
         delete item.pendingCode;
         delete item.pendingName;
         delete item.matchStatus;
@@ -394,6 +433,7 @@
 
     const parts = [...grouped.values()];
     const validPartIds = new Set(parts.map(part => part.id));
+    const partById = new Map(parts.map(part => [part.id, part]));
     const categoryByPartId = new Map(parts.map(part => [part.id, part.category]));
     const orders = (Array.isArray(source.orders) ? source.orders : [])
       .filter(order => validProjectIds.has(order.projectId))
@@ -425,14 +465,17 @@
         items: (Array.isArray(pallet.items) ? pallet.items : []).map(item => {
           const mappedPartId = oldToNew.get(item.partId) || item.partId;
           const hasMasterPart = validPartIds.has(mappedPartId);
+          const linkedPart = partById.get(mappedPartId);
+          const packCode = normalizePackDigits(item.packCode || item.packNumber || item.packDigits) || (hasMasterPart ? packDigitsForPart(linkedPart) : '');
           return {
             id: item.id || uid('stock_item'),
             partId: hasMasterPart ? mappedPartId : '',
+            packCode,
             pendingCode: hasMasterPart ? '' : String(item.pendingCode || item.partCode || '').trim().toUpperCase(),
             pendingName: hasMasterPart ? '' : String(item.pendingName || item.partName || '').trim(),
             matchStatus: !hasMasterPart && item.matchStatus === 'ambiguous' ? 'ambiguous' : '',
             candidatePartIds: !hasMasterPart && Array.isArray(item.candidatePartIds)
-              ? [...new Set(item.candidatePartIds.map(id => oldToNew.get(id) || id).filter(id => validPartIds.has(id)))]
+              ? [...new Set(item.candidatePartIds.map(id => oldToNew.get(id) || id).filter(id => validPartIds.has(id) && (!packCode || partMatchesPack(partById.get(id), packCode))))]
               : [],
             quantity: Math.max(1, Math.floor(Number(item.quantity) || 1))
           };
@@ -503,7 +546,7 @@
     inventorySearch: $('#inventorySearch'), inventoryProjectFilter: $('#inventoryProjectFilter'), inventoryStockFilter: $('#inventoryStockFilter'), inventorySort: $('#inventorySort'), inventoryCategoryFilter: $('#inventoryCategoryFilter'),
     addPartBtn: $('#addPartBtn'), inventoryCards: $('#inventoryCards'), pendingPalletMatchNotice: $('#pendingPalletMatchNotice'),
     orderSelect: $('#orderSelect'), newOrderBtn: $('#newOrderBtn'), deleteOrderBtn: $('#deleteOrderBtn'), orderSummary: $('#orderSummary'), orderBoards: $('#orderBoards'),
-    newStockPalletBtn: $('#newStockPalletBtn'), stockSummary: $('#stockSummary'), stockSearch: $('#stockSearch'), stockSearchInfo: $('#stockSearchInfo'), stockPlannerOptions: $('#stockPlannerOptions'), addStockSearchPart: $('#addStockSearchPart'), clearStockSearch: $('#clearStockSearch'), stockSelectedParts: $('#stockSelectedParts'), stockPlannerResults: $('#stockPlannerResults'), stockPalletGrid: $('#stockPalletGrid'),
+    newStockPalletBtn: $('#newStockPalletBtn'), stockSummary: $('#stockSummary'), stockSearch: $('#stockSearch'), stockPackSearch: $('#stockPackSearch'), stockSearchInfo: $('#stockSearchInfo'), stockPlannerOptions: $('#stockPlannerOptions'), stockPlannerPackOptions: $('#stockPlannerPackOptions'), addStockSearchPart: $('#addStockSearchPart'), clearStockSearch: $('#clearStockSearch'), stockSelectedParts: $('#stockSelectedParts'), stockPlannerResults: $('#stockPlannerResults'), stockPalletGrid: $('#stockPalletGrid'),
     languageSelect: $('#languageSelect'), exportBtn: $('#exportBtn'), importInput: $('#importInput'), resetBtn: $('#resetBtn'), settingsTabs: $('.settings-tabs'),
     projectDialog: $('#projectDialog'), projectForm: $('#projectForm'), projectDialogTitle: $('#projectDialogTitle'), projectPhotoInput: $('#projectPhotoInput'),
     projectPhotoPreview: $('#projectPhotoPreview'), removeProjectPhotoBtn: $('#removeProjectPhotoBtn'),
@@ -511,7 +554,7 @@
     partDialog: $('#partDialog'), partForm: $('#partForm'), partDialogTitle: $('#partDialogTitle'), partProjectCheckboxes: $('#partProjectCheckboxes'), partDuplicateWarning: $('#partDuplicateWarning'),
     orderDialog: $('#orderDialog'), orderForm: $('#orderForm'), orderItemDialog: $('#orderItemDialog'), orderItemForm: $('#orderItemForm'), availabilityHint: $('#availabilityHint'),
     stockPalletDialog: $('#stockPalletDialog'), stockPalletForm: $('#stockPalletForm'), stockPalletDialogTitle: $('#stockPalletDialogTitle'),
-    stockItemDialog: $('#stockItemDialog'), stockItemForm: $('#stockItemForm'), stockPartSearch: $('#stockPartSearch'), stockPartSuggestions: $('#stockPartSuggestions'), stockPartMatchHint: $('#stockPartMatchHint'), stockUnknownPart: $('#stockUnknownPart'), createStockMasterPartBtn: $('#createStockMasterPartBtn'), stockItemSubmitBtn: $('#stockItemSubmitBtn'),
+    stockItemDialog: $('#stockItemDialog'), stockItemForm: $('#stockItemForm'), stockPartSearch: $('#stockPartSearch'), stockPartPack: $('#stockPartPack'), stockPartSuggestions: $('#stockPartSuggestions'), stockPartMatchHint: $('#stockPartMatchHint'), stockUnknownPart: $('#stockUnknownPart'), createStockMasterPartBtn: $('#createStockMasterPartBtn'), stockItemSubmitBtn: $('#stockItemSubmitBtn'),
     stockPalletDetailDialog: $('#stockPalletDetailDialog'), stockPalletDetailTitle: $('#stockPalletDetailTitle'), stockPalletDetailMeta: $('#stockPalletDetailMeta'), stockPalletItems: $('#stockPalletItems'), deleteStockPalletBtn: $('#deleteStockPalletBtn'), editStockPalletBtn: $('#editStockPalletBtn'), addStockPalletItemBtn: $('#addStockPalletItemBtn'),
     photoDialog: $('#photoDialog'), photoDialogTitle: $('#photoDialogTitle'), expandedProjectPhoto: $('#expandedProjectPhoto'), toast: $('#toast')
   };
@@ -597,13 +640,19 @@
     return `<span class="part-code part-code-badge">${esc(part.code)}</span><strong class="part-name">${esc(part.name)}</strong>`;
   }
 
+  function stockPackBadgeMarkup(packCode) {
+    const fraction = packFractionFromDigits(packCode);
+    return fraction ? `<span class="stock-pack-badge">${esc(t('stock.packLabel', { pack: fraction }))}</span>` : '';
+  }
+
   function stockItemIdentityMarkup(item, part) {
-    if (part) return partIdentityMarkup(part);
+    const packCode = normalizePackDigits(item?.packCode) || (part ? packDigitsForPart(part) : '');
+    if (part) return `<span class="part-code part-code-badge">${esc(codeWithPack(part.code, packCode))}</span><strong class="part-name">${esc(part.name)}</strong>${stockPackBadgeMarkup(packCode)}`;
     if (!isPendingStockItem(item)) return partIdentityMarkup(null);
     const code = String(item.pendingCode || '').trim();
     const name = String(item.pendingName || '').trim();
     const ambiguous = item.matchStatus === 'ambiguous';
-    return `<span class="unregistered-part-badge ${ambiguous ? 'multiple-match-badge' : ''}">${esc(t(ambiguous ? 'stock.multipleMatches' : 'stock.unregistered'))}</span>${code ? `<span class="part-code part-code-badge pending-part-code">${esc(code)}</span>` : ''}<strong class="part-name">${esc(name || code)}</strong>`;
+    return `<span class="unregistered-part-badge ${ambiguous ? 'multiple-match-badge' : ''}">${esc(t(ambiguous ? 'stock.multipleMatches' : 'stock.unregistered'))}</span>${code ? `<span class="part-code part-code-badge pending-part-code">${esc(codeWithPack(code, packCode))}</span>` : ''}<strong class="part-name">${esc(name || code)}</strong>${stockPackBadgeMarkup(packCode)}`;
   }
 
   function assemblyLabel(part) {
@@ -907,28 +956,46 @@
   }
 
   function stockPlannerPartLabel(part) {
-    const assembly = assemblyLabel(part);
-    return `${part.code} — ${part.name}${assembly === '—' ? '' : ` [${assembly}]`}`;
+    return `${part.code} — ${part.name}`;
   }
 
-  function resolveStockPlannerPart(value) {
-    return resolveUniquePartSearch(value);
+  function resolveStockPlannerPart(value, packCode) {
+    return resolveUniquePartSearch(value, packCode);
   }
 
-  function addStockPlannerParts(rawValue = els.stockSearch.value) {
+  function splitPlannerValues(value) {
+    return String(value || '').split(/[,;\n]+/).map(item => item.trim()).filter(Boolean);
+  }
+
+  function addStockPlannerParts(rawValue = els.stockSearch.value, rawPackValue = els.stockPackSearch.value) {
     const tokens = String(rawValue || '').split(/[,;\n]+/).map(value => value.trim()).filter(Boolean);
     if (!tokens.length) return;
+    const packTokens = splitPlannerValues(rawPackValue);
+    if (packTokens.length !== tokens.length) {
+      stockPlannerFeedback = { key: 'stock.planner.packCountMismatch', params: { count: tokens.length } };
+      renderStock();
+      return;
+    }
+    const packCodes = packTokens.map(normalizePackDigits);
+    const invalidPackIndex = packCodes.findIndex(packCode => !packCode);
+    if (invalidPackIndex >= 0) {
+      stockPlannerFeedback = { key: 'stock.planner.packRequired', params: { part: tokens[invalidPackIndex] } };
+      renderStock();
+      return;
+    }
     let added = 0;
     let duplicate = '';
     let unresolved = null;
     let pendingAdded = '';
-    tokens.forEach(token => {
-      const result = resolveStockPlannerPart(token);
-      const pendingMatch = pendingStockMatchesForText(token)[0]?.item || null;
+    tokens.forEach((token, index) => {
+      const packCode = packCodes[index];
+      const result = resolveStockPlannerPart(token, packCode);
+      const pendingMatch = pendingStockMatchesForText(token, packCode)[0]?.item || null;
       const reference = result.part?.id || (pendingMatch ? stockPlannerReferenceForItem(pendingMatch) : '');
-      const label = result.part?.code || pendingStockItemLabel(pendingMatch) || token;
+      const packLabel = t('stock.packLabel', { pack: packFractionFromDigits(packCode) });
+      const label = `${result.part?.code || pendingStockItemLabel(pendingMatch) || token} · ${packLabel}`;
       if (!reference) {
-        if (!unresolved) unresolved = { token, reason: result.reason };
+        if (!unresolved) unresolved = { token: `${token} · ${packLabel}`, reason: result.reason };
         return;
       }
       if (selectedStockPartIds.has(reference)) {
@@ -940,6 +1007,7 @@
       added += 1;
     });
     els.stockSearch.value = '';
+    els.stockPackSearch.value = '';
     if (unresolved) stockPlannerFeedback = { key: unresolved.reason === 'ambiguous' ? 'stock.planner.ambiguous' : 'stock.planner.noMatch', params: { part: unresolved.token } };
     else if (duplicate && !added) stockPlannerFeedback = { key: 'stock.planner.alreadySelected', params: { part: duplicate } };
     else if (pendingAdded && added === 1) stockPlannerFeedback = { key: 'stock.planner.pendingAdded', params: { part: pendingAdded } };
@@ -1132,7 +1200,9 @@
 
     const pendingOptions = [...new Map(state.stockPallets.flatMap(pallet => pallet.items.filter(isPendingStockItem).map(item => [stockPlannerReferenceForItem(item), item]))).values()];
     els.stockPlannerOptions.innerHTML = `${state.parts.filter(part => !requestedIds.has(part.id)).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map(part => `<option value="${esc(stockPlannerPartLabel(part))}"></option>`).join('')}${pendingOptions.filter(item => !requestedIds.has(stockPlannerReferenceForItem(item))).map(item => `<option value="${esc(pendingStockItemLabel(item))}"></option>`).join('')}`;
-    els.stockSelectedParts.innerHTML = selectedEntries.map(entry => `<span class="stock-part-chip ${entry.item?.matchStatus === 'ambiguous' ? 'ambiguous-chip' : ''}"><span>${entry.part ? partIdentityMarkup(entry.part) : stockItemIdentityMarkup(entry.item, null)}</span><button aria-label="${esc(t('stock.planner.removeAria', { part: entry.label }))}" data-remove-stock-planner="${esc(entry.reference)}" type="button">×</button></span>`).join('');
+    const plannerPackCodes = [...new Set([...state.parts.map(packDigitsForPart), ...pendingOptions.map(item => normalizePackDigits(item.packCode))].filter(Boolean))].sort();
+    els.stockPlannerPackOptions.innerHTML = plannerPackCodes.map(packCode => `<option value="${esc(packFractionFromDigits(packCode))}"></option>`).join('');
+    els.stockSelectedParts.innerHTML = selectedEntries.map(entry => `<span class="stock-part-chip ${entry.item?.matchStatus === 'ambiguous' ? 'ambiguous-chip' : ''}"><span>${entry.part ? stockItemIdentityMarkup({ packCode: packDigitsForPart(entry.part) }, entry.part) : stockItemIdentityMarkup(entry.item, null)}</span><button aria-label="${esc(t('stock.planner.removeAria', { part: entry.label }))}" data-remove-stock-planner="${esc(entry.reference)}" type="button">×</button></span>`).join('');
     els.clearStockSearch.classList.toggle('hidden', !selectedEntries.length);
     els.stockSearchInfo.textContent = stockPlannerFeedback ? t(stockPlannerFeedback.key, stockPlannerFeedback.params) : (selectedEntries.length ? t('stock.planner.selectedCount', { count: selectedEntries.length }) : '');
 
@@ -1170,8 +1240,8 @@
     openDialog(els.stockPalletDialog);
   }
 
-  function resolveStockPartSearch(value) {
-    return resolveUniquePartSearch(value);
+  function resolveStockPartSearch(value, packCode = '') {
+    return resolveUniquePartSearch(value, packCode);
   }
 
   function closeStockPartSuggestions() {
@@ -1197,8 +1267,9 @@
 
   function renderStockPartSuggestions() {
     const raw = els.stockPartSearch.value.trim();
+    const packCode = normalizePackDigits(els.stockPartPack.value);
     const pallet = getStockPallet($('[name="palletId"]', els.stockItemForm).value);
-    const matches = stockPartSuggestionMatches(raw);
+    const matches = stockPartSuggestionMatches(raw, packCode);
     activeStockSuggestionIndex = -1;
     if (!raw || !matches.length) {
       els.stockPartSuggestions.innerHTML = '';
@@ -1208,7 +1279,7 @@
     els.stockPartSuggestions.innerHTML = matches.map((part, index) => {
       const alreadyAdded = Boolean(pallet?.items.some(item => item.partId === part.id));
       return `<button aria-selected="false" class="stock-part-suggestion ${alreadyAdded ? 'already-added' : ''}" data-stock-suggestion-part-id="${esc(part.id)}" id="stockPartSuggestion${index}" role="option" type="button" ${alreadyAdded ? 'disabled' : ''}>
-        <span class="suggestion-identity">${partIdentityMarkup(part)}</span>
+        <span class="suggestion-identity">${stockItemIdentityMarkup({ packCode: packDigitsForPart(part) }, part)}</span>
         <small>${esc(t('stockItem.suggestionMeta', { size: dimensionLabel(part), assembly: assemblyLabel(part), received: part.quantity, stored: storedQuantityForPart(part.id) }))}</small>
         ${alreadyAdded ? `<em>${esc(t('stockItem.alreadyAddedSuggestion'))}</em>` : ''}
       </button>`;
@@ -1222,6 +1293,7 @@
     if (!part) return;
     selectedStockSuggestionPartId = part.id;
     els.stockPartSearch.value = `${part.code} — ${part.name}`;
+    els.stockPartPack.value = packDigitsForPart(part);
     closeStockPartSuggestions();
     updateStockPartMatch();
   }
@@ -1229,18 +1301,28 @@
   function updateStockPartMatch() {
     const pallet = getStockPallet($('[name="palletId"]', els.stockItemForm).value);
     const raw = els.stockPartSearch.value.trim();
-    const result = resolveStockPartSearch(raw);
-    const selectedPart = state.parts.find(candidate => candidate.id === selectedStockSuggestionPartId) || null;
+    const rawPack = els.stockPartPack.value.trim();
+    const packCode = normalizePackDigits(rawPack);
+    const result = resolveStockPartSearch(raw, packCode);
+    const selectedCandidate = state.parts.find(candidate => candidate.id === selectedStockSuggestionPartId) || null;
+    const selectedPart = selectedCandidate && packCode && partMatchesPack(selectedCandidate, packCode) ? selectedCandidate : null;
     const part = selectedPart || result.part;
     const alreadyAdded = part && pallet?.items.some(item => item.partId === part.id);
-    const pendingAlreadyAdded = !part && pallet?.items.some(item => isPendingStockItem(item) && pendingStockItemAliases(item).includes(normalizePartSearch(raw)));
+    const pendingAlreadyAdded = !part && packCode && pallet?.items.some(item => isPendingStockItem(item) && normalizePackDigits(item.packCode) === packCode && pendingStockItemAliases(item).includes(normalizePartSearch(raw)));
     const submitButton = els.stockItemSubmitBtn;
-    $('[name="partId"]', els.stockItemForm).value = part && !alreadyAdded ? part.id : '';
+    $('[name="partId"]', els.stockItemForm).value = part && packCode && /^[1-9]{2}$/.test(rawPack) && !alreadyAdded ? part.id : '';
     els.stockPartMatchHint.className = 'availability-hint';
     els.stockUnknownPart.classList.add('hidden');
 
     if (!raw) {
       els.stockPartMatchHint.textContent = t('stock.chooseMaster');
+      submitButton.textContent = t('stockItem.add');
+      submitButton.disabled = true;
+      return;
+    }
+    if (!packCode || !/^[1-9]{2}$/.test(rawPack)) {
+      els.stockPartMatchHint.textContent = t('stockItem.packRequired');
+      els.stockPartMatchHint.classList.add('warning');
       submitButton.textContent = t('stockItem.add');
       submitButton.disabled = true;
       return;
@@ -1290,6 +1372,7 @@
     const preferred = state.parts.find(part => part.id === preferredPartId);
     selectedStockSuggestionPartId = preferred?.id || null;
     els.stockPartSearch.value = preferred ? `${preferred.code} — ${preferred.name}` : '';
+    els.stockPartPack.value = preferred ? packDigitsForPart(preferred) : '';
     els.stockPartSuggestions.innerHTML = '';
     closeStockPartSuggestions();
     closeDialog(els.stockPalletDetailDialog);
@@ -2028,6 +2111,13 @@
     updateStockPartMatch();
     renderStockPartSuggestions();
   });
+  els.stockPartPack.addEventListener('input', () => {
+    const digits = els.stockPartPack.value.replace(/\D/g, '').slice(0, 2);
+    if (els.stockPartPack.value !== digits) els.stockPartPack.value = digits;
+    selectedStockSuggestionPartId = null;
+    updateStockPartMatch();
+    renderStockPartSuggestions();
+  });
   els.stockPartSearch.addEventListener('focus', renderStockPartSuggestions);
   els.stockPartSearch.addEventListener('keydown', event => {
     const buttons = $$('button[data-stock-suggestion-part-id]:not([disabled])', els.stockPartSuggestions);
@@ -2056,31 +2146,36 @@
     const data = new FormData(els.stockItemForm);
     const pallet = getStockPallet(String(data.get('palletId') || ''));
     const raw = els.stockPartSearch.value.trim();
-    const result = resolveStockPartSearch(raw);
+    const rawPack = String(data.get('packCode') || '').trim();
+    const packCode = normalizePackDigits(rawPack);
+    const result = resolveStockPartSearch(raw, packCode);
     const part = state.parts.find(candidate => candidate.id === String(data.get('partId') || '')) || result.part;
     const quantity = Math.max(1, Math.floor(Number(data.get('quantity')) || 1));
     if (!pallet || !raw) return showToast(t('message.chooseOrCreatePart'));
+    if (!packCode || !/^[1-9]{2}$/.test(rawPack)) return showToast(t('message.packDigitsRequired'));
     let addedMatchStatus = '';
     if (part) {
       if (pallet.items.some(item => item.partId === part.id)) return showToast(t('message.palletPartDuplicate'));
-      pallet.items.push({ id: uid('stock_item'), partId: part.id, quantity });
-      addActivity('activity.partAddedStockPallet', `${part.code} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+      if (!partMatchesPack(part, packCode)) return showToast(t('message.packDoesNotMatch'));
+      pallet.items.push({ id: uid('stock_item'), partId: part.id, packCode, quantity });
+      addActivity('activity.partAddedStockPallet', `${codeWithPack(part.code, packCode)} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     } else {
       const pending = parsePendingPartInput(raw);
       const aliases = [pending.pendingCode, pending.pendingName].map(normalizePartSearch).filter(Boolean);
       if (!aliases.length) return showToast(t('message.chooseOrCreatePart'));
-      if (pallet.items.some(item => isPendingStockItem(item) && pendingStockItemAliases(item).some(alias => aliases.includes(alias)))) return showToast(t('stock.unregisteredAlreadyOnPallet'));
+      if (pallet.items.some(item => isPendingStockItem(item) && normalizePackDigits(item.packCode) === packCode && pendingStockItemAliases(item).some(alias => aliases.includes(alias)))) return showToast(t('stock.unregisteredAlreadyOnPallet'));
       const ambiguous = result.reason === 'ambiguous' && result.matches.length > 1;
       addedMatchStatus = ambiguous ? 'ambiguous' : 'unregistered';
       pallet.items.push({
         id: uid('stock_item'),
         partId: '',
         ...pending,
+        packCode,
         matchStatus: ambiguous ? 'ambiguous' : '',
         candidatePartIds: ambiguous ? result.matches.map(candidate => candidate.id) : [],
         quantity
       });
-      addActivity(ambiguous ? 'activity.ambiguousStockPartAdded' : 'activity.unregisteredStockPartAdded', `${pending.pendingName || pending.pendingCode} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+      addActivity(ambiguous ? 'activity.ambiguousStockPartAdded' : 'activity.unregisteredStockPartAdded', `${codeWithPack(pending.pendingName || pending.pendingCode, packCode)} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     }
     expandedStockPalletIds.add(pallet.id);
     openStockPalletId = null;
@@ -2092,12 +2187,13 @@
   els.createStockMasterPartBtn.addEventListener('click', () => {
     const palletId = $('[name="palletId"]', els.stockItemForm).value;
     const raw = els.stockPartSearch.value.trim();
+    const packCode = normalizePackDigits(els.stockPartPack.value);
     if (!palletId || !raw) return;
     const pending = parsePendingPartInput(raw);
     const code = pending.pendingCode;
     const name = pending.pendingName || pending.pendingCode;
     closeDialog(els.stockItemDialog);
-    openPartDialog(null, { code, name, quantity: 0, returnPalletId: palletId });
+    openPartDialog(null, { code, name, quantity: 0, assemblyPosition: packCode ? Number(packCode[0]) : '', assemblyTotal: packCode ? Number(packCode[1]) : '', returnPalletId: palletId });
   });
 
   els.addStockSearchPart.addEventListener('click', () => addStockPlannerParts());
@@ -2106,14 +2202,20 @@
     event.preventDefault();
     addStockPlannerParts();
   });
-  els.stockSearch.addEventListener('input', () => {
+  els.stockPackSearch.addEventListener('keydown', event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addStockPlannerParts();
+  });
+  [els.stockSearch, els.stockPackSearch].forEach(input => input.addEventListener('input', () => {
     stockPlannerFeedback = null;
     els.stockSearchInfo.textContent = selectedStockPartIds.size ? t('stock.planner.selectedCount', { count: selectedStockPartIds.size }) : '';
-  });
+  }));
   els.clearStockSearch.addEventListener('click', () => {
     selectedStockPartIds.clear();
     stockPlannerFeedback = null;
     els.stockSearch.value = '';
+    els.stockPackSearch.value = '';
     renderStock();
   });
   els.stockSelectedParts.addEventListener('click', event => {
