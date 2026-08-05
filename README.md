@@ -16,6 +16,8 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - Dismissible master-inventory warnings and information banners.
 - Mark parts as overflowing when no additional storage space is available.
 - A separate Stock area for undelivered store pallets, identified by delivery and pallet number.
+- Pallet part entry shows live, tappable Master Inventory suggestions as each character is typed, including dimensions and assembly numbering to distinguish similar records.
+- When typed text matches several master parts, it can still be saved exactly as entered with a **Several matches** marker; the record stays searchable and can be linked to the correct master part later without losing its pallet quantity.
 - Compact two-column pallet cards expand downward on one tap. Their three-dot menus add parts, edit pallet details or delete, while stored quantities remain editable inside the expanded card.
 - A fixed floating add-pallet control replaces the old Stock toolbar button.
 - Persistent interface languages: English, Ukrainian, Russian and Polish.

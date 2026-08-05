@@ -212,6 +212,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .part-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; }
 .part-code-badge { display: inline-flex; width: max-content; max-width: 100%; padding: 4px 7px; border: 1px solid #c8ddd9; border-radius: 7px; background: #edf7f5; color: var(--brand-dark); font-size: 10px; line-height: 1.2; letter-spacing: .035em; overflow-wrap: anywhere; }
 .unregistered-part-badge { display: inline-flex; width: max-content; padding: 4px 7px; border: 1px solid #e6be78; border-radius: 999px; background: var(--warning-soft); color: #765212; font-size: 9px; line-height: 1.2; font-weight: 900; letter-spacing: .045em; text-transform: uppercase; }
+.unregistered-part-badge.multiple-match-badge { border-color: #df985e; background: #ffead8; color: #8c4519; }
 .pending-part-code { border-style: dashed; border-color: #d5ad68; background: #fffaf0; color: #765212; }
 .part-name { color: var(--text); font-size: 14px; font-weight: 850; line-height: 1.25; }
 .table-part-name { font-size: 13px; }
@@ -327,11 +328,27 @@ tbody tr:last-child td { border-bottom: 0; }
 .stock-empty { grid-column: 1 / -1; }
 .unknown-part-prompt { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 11px 12px; border: 1px solid #e6be78; border-radius: 11px; background: var(--warning-soft); color: #765212; font-size: 12px; font-weight: 800; }
 .unknown-part-prompt button { flex: 0 0 auto; }
+.stock-part-search-shell { display: grid; gap: 6px; }
+.stock-part-search-shell > input { width: 100%; }
+.stock-part-suggestions { max-height: 260px; overflow-y: auto; display: grid; gap: 4px; padding: 5px; border: 1px solid #b8d3ce; border-radius: 12px; background: #f9fcfb; box-shadow: 0 8px 22px rgba(20,55,49,.08); }
+.stock-part-suggestion { width: 100%; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; padding: 10px; border: 1px solid transparent; border-radius: 9px; background: white; color: var(--text); text-align: left; }
+.stock-part-suggestion:hover, .stock-part-suggestion.active { border-color: #8fc6bd; background: #edf8f6; }
+.stock-part-suggestion.already-added { background: #f2f4f3; }
+.stock-part-suggestion .suggestion-identity { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.stock-part-suggestion .part-name { font-size: 12px; }
+.stock-part-suggestion small { grid-column: 1 / -1; color: var(--muted); font-size: 10px; line-height: 1.35; }
+.stock-part-suggestion em { grid-column: 2; grid-row: 1; color: #7a5a1f; font-size: 9px; font-style: normal; font-weight: 900; text-transform: uppercase; }
 .pending-pallet-notice { margin: -4px 0 15px; padding: 13px 14px; border: 1px solid #e6be78; border-radius: 13px; background: #fff8e9; color: #654a19; display: flex; align-items: center; justify-content: space-between; gap: 14px; }
 .pending-pallet-notice > div { min-width: 0; display: grid; gap: 4px; }
 .pending-pallet-notice strong { font-size: 13px; line-height: 1.35; }
 .pending-pallet-notice span { color: #7b643a; font-size: 11px; line-height: 1.4; }
 .pending-pallet-notice button { flex: 0 0 auto; }
+.pending-link-actions { max-width: min(440px, 100%); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.pending-link-actions .pending-candidate-link { min-width: 0; display: grid; gap: 2px; padding: 8px 10px; text-align: left; }
+.pending-candidate-link span, .pending-candidate-link small { min-width: 0; overflow-wrap: anywhere; }
+.pending-candidate-link span { font-size: 10px; font-weight: 900; }
+.pending-candidate-link small { color: var(--muted); font-size: 9px; }
+.stock-part-chip.ambiguous-chip { border-color: #df985e; background: #fff7ef; }
 .stock-detail-dialog { width: min(820px, calc(100% - 28px)); max-height: calc(100dvh - 28px); }
 .stock-detail-content { padding: 20px; display: flex; flex-direction: column; gap: 15px; max-height: calc(100dvh - 28px); }
 .stock-detail-meta { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -686,4 +703,6 @@ table { min-width: 1380px; }
   .unknown-part-prompt button { width: 100%; }
   .pending-pallet-notice { align-items: stretch; flex-direction: column; }
   .pending-pallet-notice button { width: 100%; }
+  .pending-link-actions { max-width: none; grid-template-columns: 1fr; }
+  .stock-part-suggestions { max-height: 220px; }
 }

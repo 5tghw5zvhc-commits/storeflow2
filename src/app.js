@@ -19,6 +19,8 @@
   let openInventoryMenuPartId = null;
   let expandedStockPalletIds = new Set();
   let openStockPalletMenuId = null;
+  let selectedStockSuggestionPartId = null;
+  let activeStockSuggestionIndex = -1;
   let activeSettingsTab = 'general';
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -187,17 +189,40 @@
 
   function resolveUniquePartSearch(value) {
     const normalized = normalizePartSearch(value);
-    if (!normalized) return { part: null, reason: 'missing' };
-    const exact = state.parts.filter(part => partLookupAliases(part).some(alias => normalizePartSearch(alias) === normalized));
-    if (exact.length === 1) return { part: exact[0], reason: '' };
-    if (exact.length > 1) return { part: null, reason: 'ambiguous' };
+    if (!normalized) return { part: null, reason: 'missing', matches: [] };
+    const byCode = (a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }) || a.name.localeCompare(b.name);
+    const exact = state.parts.filter(part => partLookupAliases(part).some(alias => normalizePartSearch(alias) === normalized)).sort(byCode);
+    if (exact.length === 1) return { part: exact[0], reason: '', matches: exact };
+    if (exact.length > 1) return { part: null, reason: 'ambiguous', matches: exact };
     const tokens = normalized.split(' ');
     const partial = state.parts.filter(part => {
       const haystack = normalizePartSearch(partLookupAliases(part).join(' '));
       return tokens.every(token => haystack.includes(token));
-    });
-    if (partial.length === 1) return { part: partial[0], reason: '' };
-    return { part: null, reason: partial.length ? 'ambiguous' : 'missing' };
+    }).sort(byCode);
+    if (partial.length === 1) return { part: partial[0], reason: '', matches: partial };
+    return { part: null, reason: partial.length ? 'ambiguous' : 'missing', matches: partial };
+  }
+
+  function stockPartSuggestionMatches(value) {
+    const normalized = normalizePartSearch(value);
+    if (!normalized) return [];
+    const tokens = normalized.split(' ');
+    const score = part => {
+      const code = normalizePartSearch(part.code);
+      const name = normalizePartSearch(part.name);
+      const aliases = partLookupAliases(part).map(normalizePartSearch);
+      if (aliases.includes(normalized)) return 0;
+      if (code.startsWith(normalized)) return 1;
+      if (name.startsWith(normalized)) return 2;
+      return 3;
+    };
+    return state.parts
+      .filter(part => {
+        const haystack = normalizePartSearch(partLookupAliases(part).join(' '));
+        return tokens.every(token => haystack.includes(token));
+      })
+      .sort((a, b) => score(a) - score(b) || a.code.localeCompare(b.code, undefined, { numeric: true }) || a.name.localeCompare(b.name))
+      .slice(0, 8);
   }
 
   function parsePendingPartInput(value) {
@@ -233,8 +258,24 @@
     return pendingStockItemAliases(item)[0] || `pending-${item?.id || ''}`;
   }
 
+  function stockPlannerReferenceForItem(item) {
+    return item?.partId || `pending:${pendingStockItemKey(item)}`;
+  }
+
+  function stockPlannerEntryForReference(reference) {
+    const part = state.parts.find(candidate => candidate.id === reference);
+    if (part) return { reference, part, item: null, label: part.code };
+    const match = state.stockPallets.flatMap(pallet => pallet.items).find(item => isPendingStockItem(item) && stockPlannerReferenceForItem(item) === reference);
+    return match ? { reference, part: null, item: match, label: pendingStockItemLabel(match) } : null;
+  }
+
+  function stockPlannerReferenceLabel(reference) {
+    return stockPlannerEntryForReference(reference)?.label || t('common.part');
+  }
+
   function pendingStockItemMatchesPart(item, part) {
     if (!isPendingStockItem(item) || !part) return false;
+    if (part.id && Array.isArray(item.candidatePartIds) && item.candidatePartIds.includes(part.id)) return true;
     const pendingAliases = new Set(pendingStockItemAliases(item));
     return [part.code, part.name, `${part.code} — ${part.name}`]
       .map(normalizePartSearch)
@@ -272,6 +313,8 @@
         item.partId = part.id;
         delete item.pendingCode;
         delete item.pendingName;
+        delete item.matchStatus;
+        delete item.candidatePartIds;
         masterItem = item;
       });
     });
@@ -378,6 +421,10 @@
             partId: hasMasterPart ? mappedPartId : '',
             pendingCode: hasMasterPart ? '' : String(item.pendingCode || item.partCode || '').trim().toUpperCase(),
             pendingName: hasMasterPart ? '' : String(item.pendingName || item.partName || '').trim(),
+            matchStatus: !hasMasterPart && item.matchStatus === 'ambiguous' ? 'ambiguous' : '',
+            candidatePartIds: !hasMasterPart && Array.isArray(item.candidatePartIds)
+              ? [...new Set(item.candidatePartIds.map(id => oldToNew.get(id) || id).filter(id => validPartIds.has(id)))]
+              : [],
             quantity: Math.max(1, Math.floor(Number(item.quantity) || 1))
           };
         }).filter(item => item.partId || item.pendingCode || item.pendingName)
@@ -450,7 +497,7 @@
     partDialog: $('#partDialog'), partForm: $('#partForm'), partDialogTitle: $('#partDialogTitle'), partProjectCheckboxes: $('#partProjectCheckboxes'), partDuplicateWarning: $('#partDuplicateWarning'),
     orderDialog: $('#orderDialog'), orderForm: $('#orderForm'), orderItemDialog: $('#orderItemDialog'), orderItemForm: $('#orderItemForm'), availabilityHint: $('#availabilityHint'),
     stockPalletDialog: $('#stockPalletDialog'), stockPalletForm: $('#stockPalletForm'), stockPalletDialogTitle: $('#stockPalletDialogTitle'),
-    stockItemDialog: $('#stockItemDialog'), stockItemForm: $('#stockItemForm'), stockPartSearch: $('#stockPartSearch'), stockPartOptions: $('#stockPartOptions'), stockPartMatchHint: $('#stockPartMatchHint'), stockUnknownPart: $('#stockUnknownPart'), createStockMasterPartBtn: $('#createStockMasterPartBtn'), stockItemSubmitBtn: $('#stockItemSubmitBtn'),
+    stockItemDialog: $('#stockItemDialog'), stockItemForm: $('#stockItemForm'), stockPartSearch: $('#stockPartSearch'), stockPartSuggestions: $('#stockPartSuggestions'), stockPartMatchHint: $('#stockPartMatchHint'), stockUnknownPart: $('#stockUnknownPart'), createStockMasterPartBtn: $('#createStockMasterPartBtn'), stockItemSubmitBtn: $('#stockItemSubmitBtn'),
     stockPalletDetailDialog: $('#stockPalletDetailDialog'), stockPalletDetailTitle: $('#stockPalletDetailTitle'), stockPalletDetailMeta: $('#stockPalletDetailMeta'), stockPalletItems: $('#stockPalletItems'), deleteStockPalletBtn: $('#deleteStockPalletBtn'), editStockPalletBtn: $('#editStockPalletBtn'), addStockPalletItemBtn: $('#addStockPalletItemBtn'),
     photoDialog: $('#photoDialog'), photoDialogTitle: $('#photoDialogTitle'), expandedProjectPhoto: $('#expandedProjectPhoto'), toast: $('#toast')
   };
@@ -541,7 +588,8 @@
     if (!isPendingStockItem(item)) return partIdentityMarkup(null);
     const code = String(item.pendingCode || '').trim();
     const name = String(item.pendingName || '').trim();
-    return `<span class="unregistered-part-badge">${esc(t('stock.unregistered'))}</span>${code ? `<span class="part-code part-code-badge pending-part-code">${esc(code)}</span>` : ''}<strong class="part-name">${esc(name || code)}</strong>`;
+    const ambiguous = item.matchStatus === 'ambiguous';
+    return `<span class="unregistered-part-badge ${ambiguous ? 'multiple-match-badge' : ''}">${esc(t(ambiguous ? 'stock.multipleMatches' : 'stock.unregistered'))}</span>${code ? `<span class="part-code part-code-badge pending-part-code">${esc(code)}</span>` : ''}<strong class="part-name">${esc(name || code)}</strong>`;
   }
 
   function assemblyLabel(part) {
@@ -785,7 +833,7 @@
       action = `<button class="secondary" data-part-id="${esc(part.id)}" data-pending-action="link" type="button">${esc(t('inventory.pendingLink'))}</button>`;
     } else if (candidateParts.length > 1) {
       help = t('inventory.pendingAmbiguousHelp');
-      action = '';
+      action = `<div class="pending-link-actions">${candidateParts.map(part => `<button class="secondary pending-candidate-link" data-part-id="${esc(part.id)}" data-pending-action="link" type="button"><span>${esc(part.code)} — ${esc(part.name)}</span><small>${esc(t('inventory.assemblyLabel', { assembly: assemblyLabel(part) }))}</small></button>`).join('')}</div>`;
     }
     els.pendingPalletMatchNotice.innerHTML = `<div><strong>${esc(t('inventory.pendingFound', { count: matches.length, part: label }))}</strong><span>${esc(help)}</span></div>${action}`;
     els.pendingPalletMatchNotice.classList.remove('hidden');
@@ -858,22 +906,28 @@
     let added = 0;
     let duplicate = '';
     let unresolved = null;
+    let pendingAdded = '';
     tokens.forEach(token => {
       const result = resolveStockPlannerPart(token);
-      if (!result.part) {
+      const pendingMatch = pendingStockMatchesForText(token)[0]?.item || null;
+      const reference = result.part?.id || (pendingMatch ? stockPlannerReferenceForItem(pendingMatch) : '');
+      const label = result.part?.code || pendingStockItemLabel(pendingMatch) || token;
+      if (!reference) {
         if (!unresolved) unresolved = { token, reason: result.reason };
         return;
       }
-      if (selectedStockPartIds.has(result.part.id)) {
-        if (!duplicate) duplicate = result.part.code;
+      if (selectedStockPartIds.has(reference)) {
+        if (!duplicate) duplicate = label;
         return;
       }
-      selectedStockPartIds.add(result.part.id);
+      selectedStockPartIds.add(reference);
+      if (!result.part) pendingAdded = label;
       added += 1;
     });
     els.stockSearch.value = '';
     if (unresolved) stockPlannerFeedback = { key: unresolved.reason === 'ambiguous' ? 'stock.planner.ambiguous' : 'stock.planner.noMatch', params: { part: unresolved.token } };
     else if (duplicate && !added) stockPlannerFeedback = { key: 'stock.planner.alreadySelected', params: { part: duplicate } };
+    else if (pendingAdded && added === 1) stockPlannerFeedback = { key: 'stock.planner.pendingAdded', params: { part: pendingAdded } };
     else stockPlannerFeedback = { key: added === 1 ? 'stock.planner.addedOne' : 'stock.planner.addedMany', params: { count: added } };
     renderStock();
   }
@@ -907,9 +961,10 @@
     const overflowItems = [];
     pallet.items.forEach(item => {
       const part = state.parts.find(candidate => candidate.id === item.partId);
-      if (requestedIds.has(item.partId)) {
-        coverage |= bitById.get(item.partId) || 0n;
-        coveredPartIds.add(item.partId);
+      const reference = stockPlannerReferenceForItem(item);
+      if (requestedIds.has(reference)) {
+        coverage |= bitById.get(reference) || 0n;
+        coveredPartIds.add(reference);
         requestedUnits += item.quantity;
       } else {
         unrelatedUnits += item.quantity;
@@ -938,7 +993,11 @@
   }
 
   function optimizeStockPallets(partIds) {
-    const validIds = [...new Set(partIds)].filter(id => state.parts.some(part => part.id === id));
+    const availableReferences = new Set([
+      ...state.parts.map(part => part.id),
+      ...state.stockPallets.flatMap(pallet => pallet.items.filter(isPendingStockItem).map(stockPlannerReferenceForItem))
+    ]);
+    const validIds = [...new Set(partIds)].filter(id => availableReferences.has(id));
     const requestedIds = new Set(validIds);
     const bitById = new Map(validIds.map((id, index) => [id, 1n << BigInt(index)]));
     const candidates = state.stockPallets.map(pallet => stockPlannerCandidate(pallet, requestedIds, bitById)).filter(candidate => candidate.coverage);
@@ -1012,11 +1071,11 @@
     const expanded = expandedStockPalletIds.has(pallet.id);
     const menuOpen = openStockPalletMenuId === pallet.id;
     const sortedItems = plannerCandidate
-      ? [...pallet.items].sort((a, b) => Number(requestedIds.has(b.partId)) - Number(requestedIds.has(a.partId)))
+      ? [...pallet.items].sort((a, b) => Number(requestedIds.has(stockPlannerReferenceForItem(b))) - Number(requestedIds.has(stockPlannerReferenceForItem(a))))
       : pallet.items;
     const partRows = sortedItems.map(item => {
       const part = state.parts.find(candidate => candidate.id === item.partId);
-      const match = plannerCandidate && requestedIds.has(item.partId);
+      const match = plannerCandidate && requestedIds.has(stockPlannerReferenceForItem(item));
       const itemLabel = part?.code || pendingStockItemLabel(item) || t('common.part');
       return `<div class="stock-card-part ${match ? 'requested-part-match' : ''}">
         <div>${stockItemIdentityMarkup(item, part)}${match ? `<small class="needed-match-label">${esc(t('stock.planner.neededPart'))}</small>` : ''}</div>
@@ -1027,7 +1086,7 @@
     const overflowItems = pallet.items.map(item => ({ item, part: state.parts.find(part => part.id === item.partId) })).filter(entry => entry.part?.overflowing);
     const recommendationLabel = plannerCandidate ? `<div class="recommendation-label">${esc(t(recommendationIndex ? 'stock.planner.additional' : 'stock.planner.primary'))}</div>` : '';
     const recommendationDetails = plannerCandidate ? `
-      <div class="planner-card-coverage">${esc(t('stock.planner.covers', { parts: [...plannerCandidate.coveredPartIds].map(id => state.parts.find(part => part.id === id)?.code).filter(Boolean).join(', ') }))}</div>
+      <div class="planner-card-coverage">${esc(t('stock.planner.covers', { parts: [...plannerCandidate.coveredPartIds].map(stockPlannerReferenceLabel).filter(Boolean).join(', ') }))}</div>
       ${plannerCandidate.unrelatedLines ? `<div class="planner-card-extra">${esc(t('stock.planner.otherLines', { count: plannerCandidate.unrelatedLines, units: plannerCandidate.unrelatedUnits }))}</div>` : ''}
       ${plannerCandidate.overflowUnits ? `<div class="planner-overflow-warning" role="status"><strong>${esc(t('stock.planner.overflowWarning'))}</strong><span>${esc(t('stock.planner.overflowContents', { parts: plannerCandidate.overflowItems.map(entry => `${entry.part.code} ×${entry.quantity}`).join(', ') }))}</span></div>` : ''}` : '';
     const expandedContent = expanded ? `<div class="stock-card-expanded">
@@ -1044,21 +1103,25 @@
   }
 
   function renderStock() {
-    const validPartIds = new Set(state.parts.map(part => part.id));
-    selectedStockPartIds = new Set([...selectedStockPartIds].filter(id => validPartIds.has(id)));
-    const selectedParts = [...selectedStockPartIds].map(id => state.parts.find(part => part.id === id)).filter(Boolean);
-    const requestedIds = new Set(selectedParts.map(part => part.id));
+    const validReferences = new Set([
+      ...state.parts.map(part => part.id),
+      ...state.stockPallets.flatMap(pallet => pallet.items.filter(isPendingStockItem).map(stockPlannerReferenceForItem))
+    ]);
+    selectedStockPartIds = new Set([...selectedStockPartIds].filter(reference => validReferences.has(reference)));
+    const selectedEntries = [...selectedStockPartIds].map(stockPlannerEntryForReference).filter(Boolean);
+    const requestedIds = new Set(selectedEntries.map(entry => entry.reference));
     const pallets = [...state.stockPallets].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     const storedUnits = state.stockPallets.reduce((sum, pallet) => sum + pallet.items.reduce((itemSum, item) => itemSum + item.quantity, 0), 0);
     const distinctParts = new Set(state.stockPallets.flatMap(pallet => pallet.items.map(item => item.partId || pendingStockItemKey(item)))).size;
     els.stockSummary.innerHTML = `<div class="summary-chip"><span>${esc(t('stock.storedPallets'))}</span><strong>${state.stockPallets.length}</strong></div><div class="summary-chip"><span>${esc(t('stock.differentParts'))}</span><strong>${distinctParts}</strong></div><div class="summary-chip"><span>${esc(t('stock.unitsAtStore'))}</span><strong>${storedUnits}</strong></div>`;
 
-    els.stockPlannerOptions.innerHTML = state.parts.filter(part => !requestedIds.has(part.id)).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map(part => `<option value="${esc(stockPlannerPartLabel(part))}"></option>`).join('');
-    els.stockSelectedParts.innerHTML = selectedParts.map(part => `<span class="stock-part-chip"><span>${partIdentityMarkup(part)}</span><button aria-label="${esc(t('stock.planner.removeAria', { part: part.code }))}" data-remove-stock-planner="${esc(part.id)}" type="button">×</button></span>`).join('');
-    els.clearStockSearch.classList.toggle('hidden', !selectedParts.length);
-    els.stockSearchInfo.textContent = stockPlannerFeedback ? t(stockPlannerFeedback.key, stockPlannerFeedback.params) : (selectedParts.length ? t('stock.planner.selectedCount', { count: selectedParts.length }) : '');
+    const pendingOptions = [...new Map(state.stockPallets.flatMap(pallet => pallet.items.filter(isPendingStockItem).map(item => [stockPlannerReferenceForItem(item), item]))).values()];
+    els.stockPlannerOptions.innerHTML = `${state.parts.filter(part => !requestedIds.has(part.id)).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })).map(part => `<option value="${esc(stockPlannerPartLabel(part))}"></option>`).join('')}${pendingOptions.filter(item => !requestedIds.has(stockPlannerReferenceForItem(item))).map(item => `<option value="${esc(pendingStockItemLabel(item))}"></option>`).join('')}`;
+    els.stockSelectedParts.innerHTML = selectedEntries.map(entry => `<span class="stock-part-chip ${entry.item?.matchStatus === 'ambiguous' ? 'ambiguous-chip' : ''}"><span>${entry.part ? partIdentityMarkup(entry.part) : stockItemIdentityMarkup(entry.item, null)}</span><button aria-label="${esc(t('stock.planner.removeAria', { part: entry.label }))}" data-remove-stock-planner="${esc(entry.reference)}" type="button">×</button></span>`).join('');
+    els.clearStockSearch.classList.toggle('hidden', !selectedEntries.length);
+    els.stockSearchInfo.textContent = stockPlannerFeedback ? t(stockPlannerFeedback.key, stockPlannerFeedback.params) : (selectedEntries.length ? t('stock.planner.selectedCount', { count: selectedEntries.length }) : '');
 
-    if (!selectedParts.length) {
+    if (!selectedEntries.length) {
       if (openStockPalletMenuId && !pallets.some(pallet => pallet.id === openStockPalletMenuId)) openStockPalletMenuId = null;
       els.stockPlannerResults.classList.add('hidden');
       els.stockPlannerResults.innerHTML = '';
@@ -1066,14 +1129,14 @@
       return;
     }
 
-    const result = optimizeStockPallets(selectedParts.map(part => part.id));
+    const result = optimizeStockPallets(selectedEntries.map(entry => entry.reference));
     const coveredCount = bitCount(result.mask);
-    const unavailableParts = result.unavailablePartIds.map(id => state.parts.find(part => part.id === id)).filter(Boolean);
+    const unavailableParts = result.unavailablePartIds.map(stockPlannerEntryForReference).filter(Boolean);
     const recommendationKey = result.palletCount === 1 ? 'stock.planner.recommendOne' : 'stock.planner.recommendMany';
     els.stockPlannerResults.classList.remove('hidden');
-    els.stockPlannerResults.innerHTML = `<div class="planner-result-head"><div><p class="eyebrow">${esc(t('stock.planner.resultEyebrow'))}</p><h3>${esc(t(recommendationKey, { count: result.palletCount }))}</h3></div><span class="planner-coverage">${esc(t('stock.planner.coverage', { covered: coveredCount, total: selectedParts.length }))}</span></div>
+    els.stockPlannerResults.innerHTML = `<div class="planner-result-head"><div><p class="eyebrow">${esc(t('stock.planner.resultEyebrow'))}</p><h3>${esc(t(recommendationKey, { count: result.palletCount }))}</h3></div><span class="planner-coverage">${esc(t('stock.planner.coverage', { covered: coveredCount, total: selectedEntries.length }))}</span></div>
       <div class="planner-result-metrics"><span class="${result.overflowUnits ? 'risk' : 'safe'}">${esc(result.overflowUnits ? t('stock.planner.overflowUnits', { count: result.overflowUnits }) : t('stock.planner.noOverflow'))}</span><span>${esc(t('stock.planner.unrelatedUnits', { count: result.unrelatedUnits }))}</span><span>${esc(t('stock.planner.optimized'))}</span></div>
-      ${unavailableParts.length ? `<div class="planner-unavailable"><strong>${esc(t('stock.planner.unavailableTitle'))}</strong><span>${esc(t('stock.planner.unavailable', { parts: unavailableParts.map(part => part.code).join(', ') }))}</span></div>` : ''}`;
+      ${unavailableParts.length ? `<div class="planner-unavailable"><strong>${esc(t('stock.planner.unavailableTitle'))}</strong><span>${esc(t('stock.planner.unavailable', { parts: unavailableParts.map(entry => entry.label).join(', ') }))}</span></div>` : ''}`;
 
     if (openStockPalletMenuId && !result.pallets.some(candidate => candidate.pallet.id === openStockPalletMenuId)) openStockPalletMenuId = null;
     els.stockPalletGrid.innerHTML = result.pallets.length
@@ -1096,11 +1159,64 @@
     return resolveUniquePartSearch(value);
   }
 
+  function closeStockPartSuggestions() {
+    activeStockSuggestionIndex = -1;
+    els.stockPartSuggestions.classList.add('hidden');
+    els.stockPartSearch.setAttribute('aria-expanded', 'false');
+    els.stockPartSearch.removeAttribute('aria-activedescendant');
+  }
+
+  function setActiveStockSuggestion(index) {
+    const buttons = $$('button[data-stock-suggestion-part-id]:not([disabled])', els.stockPartSuggestions);
+    if (!buttons.length) return closeStockPartSuggestions();
+    activeStockSuggestionIndex = (index + buttons.length) % buttons.length;
+    buttons.forEach((button, buttonIndex) => {
+      const active = buttonIndex === activeStockSuggestionIndex;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+    const activeButton = buttons[activeStockSuggestionIndex];
+    els.stockPartSearch.setAttribute('aria-activedescendant', activeButton.id);
+    activeButton.scrollIntoView?.({ block: 'nearest' });
+  }
+
+  function renderStockPartSuggestions() {
+    const raw = els.stockPartSearch.value.trim();
+    const pallet = getStockPallet($('[name="palletId"]', els.stockItemForm).value);
+    const matches = stockPartSuggestionMatches(raw);
+    activeStockSuggestionIndex = -1;
+    if (!raw || !matches.length) {
+      els.stockPartSuggestions.innerHTML = '';
+      closeStockPartSuggestions();
+      return;
+    }
+    els.stockPartSuggestions.innerHTML = matches.map((part, index) => {
+      const alreadyAdded = Boolean(pallet?.items.some(item => item.partId === part.id));
+      return `<button aria-selected="false" class="stock-part-suggestion ${alreadyAdded ? 'already-added' : ''}" data-stock-suggestion-part-id="${esc(part.id)}" id="stockPartSuggestion${index}" role="option" type="button" ${alreadyAdded ? 'disabled' : ''}>
+        <span class="suggestion-identity">${partIdentityMarkup(part)}</span>
+        <small>${esc(t('stockItem.suggestionMeta', { size: dimensionLabel(part), assembly: assemblyLabel(part), received: part.quantity, stored: storedQuantityForPart(part.id) }))}</small>
+        ${alreadyAdded ? `<em>${esc(t('stockItem.alreadyAddedSuggestion'))}</em>` : ''}
+      </button>`;
+    }).join('');
+    els.stockPartSuggestions.classList.remove('hidden');
+    els.stockPartSearch.setAttribute('aria-expanded', 'true');
+  }
+
+  function chooseStockPartSuggestion(partId) {
+    const part = state.parts.find(candidate => candidate.id === partId);
+    if (!part) return;
+    selectedStockSuggestionPartId = part.id;
+    els.stockPartSearch.value = `${part.code} — ${part.name}`;
+    closeStockPartSuggestions();
+    updateStockPartMatch();
+  }
+
   function updateStockPartMatch() {
     const pallet = getStockPallet($('[name="palletId"]', els.stockItemForm).value);
     const raw = els.stockPartSearch.value.trim();
     const result = resolveStockPartSearch(raw);
-    const part = result.part;
+    const selectedPart = state.parts.find(candidate => candidate.id === selectedStockSuggestionPartId) || null;
+    const part = selectedPart || result.part;
     const alreadyAdded = part && pallet?.items.some(item => item.partId === part.id);
     const pendingAlreadyAdded = !part && pallet?.items.some(item => isPendingStockItem(item) && pendingStockItemAliases(item).includes(normalizePartSearch(raw)));
     const submitButton = els.stockItemSubmitBtn;
@@ -1137,10 +1253,10 @@
       return;
     }
     if (result.reason === 'ambiguous') {
-      els.stockPartMatchHint.textContent = t('stockItem.ambiguous');
+      els.stockPartMatchHint.textContent = t('stockItem.ambiguousCanAdd', { count: result.matches.length });
       els.stockPartMatchHint.classList.add('warning');
-      submitButton.textContent = t('stockItem.add');
-      submitButton.disabled = true;
+      submitButton.textContent = t('stockItem.addAsTyped');
+      submitButton.disabled = false;
       return;
     }
     els.stockPartMatchHint.textContent = t('stock.noExactMatch');
@@ -1156,11 +1272,11 @@
     els.stockItemForm.reset();
     $('[name="palletId"]', els.stockItemForm).value = palletId;
     $('[name="quantity"]', els.stockItemForm).value = 1;
-    const addedIds = new Set(pallet.items.map(item => item.partId));
-    const availableParts = state.parts.filter(part => !addedIds.has(part.id)).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
-    els.stockPartOptions.innerHTML = availableParts.map(part => `<option value="${esc(part.code)} — ${esc(part.name)}" label="${esc(t('stock.optionDetailsWithSize', { size: dimensionLabel(part), received: part.quantity, stored: storedQuantityForPart(part.id) }))}"></option>`).join('');
     const preferred = state.parts.find(part => part.id === preferredPartId);
+    selectedStockSuggestionPartId = preferred?.id || null;
     els.stockPartSearch.value = preferred ? `${preferred.code} — ${preferred.name}` : '';
+    els.stockPartSuggestions.innerHTML = '';
+    closeStockPartSuggestions();
     closeDialog(els.stockPalletDetailDialog);
     updateStockPartMatch();
     openDialog(els.stockItemDialog);
@@ -1180,7 +1296,7 @@
     els.stockPalletItems.innerHTML = pallet.items.length ? pallet.items.map(item => {
       const part = state.parts.find(candidate => candidate.id === item.partId);
       return `<div class="stock-detail-item">
-        <div class="stock-detail-part"><div class="part-identity-stack">${stockItemIdentityMarkup(item, part)}</div><span>${part ? esc(t('stock.partDetail', { category: categoryLabel(part.category), size: dimensionLabel(part), received: part.quantity, stored: storedQuantityForPart(part.id) })) : esc(t(isPendingStockItem(item) ? 'stock.unregisteredDetail' : 'stock.masterUnavailable'))}</span>${part?.overflowing ? `<span class="status overflowing">${esc(t('status.overflowing'))}</span>` : ''}</div>
+        <div class="stock-detail-part"><div class="part-identity-stack">${stockItemIdentityMarkup(item, part)}</div><span>${part ? esc(t('stock.partDetail', { category: categoryLabel(part.category), size: dimensionLabel(part), received: part.quantity, stored: storedQuantityForPart(part.id) })) : esc(t(isPendingStockItem(item) ? (item.matchStatus === 'ambiguous' ? 'stock.multipleMatchesDetail' : 'stock.unregisteredDetail') : 'stock.masterUnavailable'))}</span>${part?.overflowing ? `<span class="status overflowing">${esc(t('status.overflowing'))}</span>` : ''}</div>
         <label class="stored-quantity-editor"><span>${esc(t('stock.onPallet'))}</span><input type="number" min="1" step="1" inputmode="numeric" value="${item.quantity}" data-action="stock-edit-quantity" data-item-id="${esc(item.id)}" /></label>
         <button class="remove-item" data-action="stock-remove-item" data-item-id="${esc(item.id)}" aria-label="${esc(t('stock.removePartAria'))}" type="button">×</button>
       </div>`;
@@ -1607,6 +1723,7 @@
   els.menuBtn.addEventListener('click', () => els.sidebar.classList.toggle('open'));
   document.addEventListener('click', event => {
     if (window.innerWidth <= 820 && els.sidebar.classList.contains('open') && !els.sidebar.contains(event.target) && event.target !== els.menuBtn) els.sidebar.classList.remove('open');
+    if (!event.target.closest('.stock-part-search-shell')) closeStockPartSuggestions();
     const dismissButton = event.target.closest('[data-dismiss-notice]');
     if (dismissButton) dismissNotice(dismissButton.dataset.dismissNotice, dismissButton.dataset.signature || '');
     if (openInventoryMenuPartId && !event.target.closest('.inventory-menu-toggle, .inventory-card-menu')) {
@@ -1630,6 +1747,10 @@
       return;
     }
     const returnToPallet = (dialog === els.stockItemDialog || dialog === els.stockPalletDialog) && openStockPalletId;
+    if (dialog === els.stockItemDialog) {
+      selectedStockSuggestionPartId = null;
+      closeStockPartSuggestions();
+    }
     if (dialog === els.stockPalletDetailDialog) openStockPalletId = null;
     closeDialog(dialog);
     if (returnToPallet) openStockPalletDetail(openStockPalletId);
@@ -1884,7 +2005,34 @@
     showToast(t(id ? 'message.palletUpdated' : 'message.palletCreated'));
   });
 
-  els.stockPartSearch.addEventListener('input', updateStockPartMatch);
+  els.stockPartSearch.addEventListener('input', () => {
+    selectedStockSuggestionPartId = null;
+    updateStockPartMatch();
+    renderStockPartSuggestions();
+  });
+  els.stockPartSearch.addEventListener('focus', renderStockPartSuggestions);
+  els.stockPartSearch.addEventListener('keydown', event => {
+    const buttons = $$('button[data-stock-suggestion-part-id]:not([disabled])', els.stockPartSuggestions);
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (els.stockPartSuggestions.classList.contains('hidden')) renderStockPartSuggestions();
+      setActiveStockSuggestion(activeStockSuggestionIndex + 1);
+    }
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (els.stockPartSuggestions.classList.contains('hidden')) renderStockPartSuggestions();
+      setActiveStockSuggestion(activeStockSuggestionIndex < 0 ? -1 : activeStockSuggestionIndex - 1);
+    }
+    if (event.key === 'Enter' && activeStockSuggestionIndex >= 0 && buttons[activeStockSuggestionIndex]) {
+      event.preventDefault();
+      chooseStockPartSuggestion(buttons[activeStockSuggestionIndex].dataset.stockSuggestionPartId);
+    }
+    if (event.key === 'Escape') closeStockPartSuggestions();
+  });
+  els.stockPartSuggestions.addEventListener('click', event => {
+    const button = event.target.closest('button[data-stock-suggestion-part-id]');
+    if (button && !button.disabled) chooseStockPartSuggestion(button.dataset.stockSuggestionPartId);
+  });
   els.stockItemForm.addEventListener('submit', event => {
     event.preventDefault();
     const data = new FormData(els.stockItemForm);
@@ -1894,7 +2042,7 @@
     const part = state.parts.find(candidate => candidate.id === String(data.get('partId') || '')) || result.part;
     const quantity = Math.max(1, Math.floor(Number(data.get('quantity')) || 1));
     if (!pallet || !raw) return showToast(t('message.chooseOrCreatePart'));
-    if (result.reason === 'ambiguous' && !part) return showToast(t('stockItem.ambiguous'));
+    let addedMatchStatus = '';
     if (part) {
       if (pallet.items.some(item => item.partId === part.id)) return showToast(t('message.palletPartDuplicate'));
       pallet.items.push({ id: uid('stock_item'), partId: part.id, quantity });
@@ -1904,14 +2052,23 @@
       const aliases = [pending.pendingCode, pending.pendingName].map(normalizePartSearch).filter(Boolean);
       if (!aliases.length) return showToast(t('message.chooseOrCreatePart'));
       if (pallet.items.some(item => isPendingStockItem(item) && pendingStockItemAliases(item).some(alias => aliases.includes(alias)))) return showToast(t('stock.unregisteredAlreadyOnPallet'));
-      pallet.items.push({ id: uid('stock_item'), partId: '', ...pending, quantity });
-      addActivity('activity.unregisteredStockPartAdded', `${pending.pendingName || pending.pendingCode} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+      const ambiguous = result.reason === 'ambiguous' && result.matches.length > 1;
+      addedMatchStatus = ambiguous ? 'ambiguous' : 'unregistered';
+      pallet.items.push({
+        id: uid('stock_item'),
+        partId: '',
+        ...pending,
+        matchStatus: ambiguous ? 'ambiguous' : '',
+        candidatePartIds: ambiguous ? result.matches.map(candidate => candidate.id) : [],
+        quantity
+      });
+      addActivity(ambiguous ? 'activity.ambiguousStockPartAdded' : 'activity.unregisteredStockPartAdded', `${pending.pendingName || pending.pendingCode} × ${quantity} · ${pallet.deliveryNumber} / ${pallet.palletNumber}`);
     }
     expandedStockPalletIds.add(pallet.id);
     openStockPalletId = null;
     closeDialog(els.stockItemDialog);
     renderAll();
-    showToast(part ? t(part.overflowing ? 'message.partAddedOverflowing' : 'message.partAddedPallet') : t('message.unregisteredPartAdded'));
+    showToast(part ? t(part.overflowing ? 'message.partAddedOverflowing' : 'message.partAddedPallet') : t(addedMatchStatus === 'ambiguous' ? 'message.ambiguousPartAdded' : 'message.unregisteredPartAdded'));
   });
 
   els.createStockMasterPartBtn.addEventListener('click', () => {

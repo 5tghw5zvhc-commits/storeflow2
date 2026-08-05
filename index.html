@@ -257,8 +257,8 @@
 <div class="modal-head"><div><p class="eyebrow" data-i18n="stockItem.eyebrow">PALLET CONTENTS</p><h3 data-i18n="stockItem.title">Add a stored part</h3></div><button class="icon-button close-dialog" type="button">×</button></div>
 <input name="palletId" type="hidden"/>
 <input name="partId" type="hidden"/>
-<label><span data-i18n="stockItem.search">Part code, name or measurements</span><input autocomplete="off" data-i18n-placeholder="stockItem.searchPlaceholder" id="stockPartSearch" list="stockPartOptions" placeholder="Start typing a code, name or measurements" required=""/></label>
-<datalist id="stockPartOptions"></datalist>
+<label for="stockPartSearch"><span data-i18n="stockItem.search">Part code, name or measurements</span></label>
+<div class="stock-part-search-shell"><input aria-autocomplete="list" aria-controls="stockPartSuggestions" aria-expanded="false" autocomplete="off" data-i18n-placeholder="stockItem.searchPlaceholder" id="stockPartSearch" placeholder="Start typing a code, name or measurements" required=""/><div aria-label="Matching master parts" class="stock-part-suggestions hidden" data-i18n-aria="stockItem.suggestionsAria" id="stockPartSuggestions" role="listbox"></div></div>
 <label><span data-i18n="stockItem.quantity">Quantity on this pallet</span><input inputmode="numeric" min="1" name="quantity" required="" type="number" value="1"/></label>
 <div class="availability-hint" id="stockPartMatchHint"></div>
 <div class="unknown-part-prompt hidden" id="stockUnknownPart"><span data-i18n="stockItem.unknown">This part is not in Master Inventory. Add it as unregistered now, or create its master record first.</span><button class="secondary" data-i18n="stockItem.createMaster" id="createStockMasterPartBtn" type="button">Create master part</button></div>
