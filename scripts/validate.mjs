@@ -37,7 +37,7 @@ for (const fragment of forbiddenHtml) {
   if (html.includes(fragment)) throw new Error(`index.html still contains removed interface: ${fragment}`);
 }
 
-const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="inventoryCategoryFilter"', 'data-i18n="category.Infills" value="Infills"', 'data-i18n="category.Other" value="Other"', 'id="pendingPalletMatchNotice"', 'id="stockItemSubmitBtn"', 'id="stockPartSuggestions"', 'id="stockPartPack"', 'name="packCode"', 'pattern="[1-9][1-9]"', 'aria-autocomplete="list"', 'aria-controls="stockPartSuggestions"', 'class="inventory-fab"', 'class="inventory-fab stock-fab"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="stockPackSearch"', 'id="stockPlannerPackOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'data-i18n-aria="stock.planner.aria"', 'data-settings-tab="general"', 'data-settings-tab="data"', 'data-settings-tab="tips"', 'id="settingsDataPanel"', 'id="settingsTipsPanel"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
+const requiredHtml = ['data-stock-filter="low"', 'data-stock-filter="out"', 'name="length"', 'name="width"', 'name="height"', 'id="photoDialog"', 'id="partDuplicateWarning"', 'id="inventoryCategoryFilter"', 'data-i18n="category.Infills" value="Infills"', 'data-i18n="category.Other" value="Other"', 'id="pendingPalletMatchNotice"', 'id="stockItemSubmitBtn"', 'id="stockPartSuggestions"', 'id="stockPartPack"', 'name="packCode"', 'pattern="[1-9][1-9]"', 'aria-autocomplete="list"', 'aria-controls="stockPartSuggestions"', 'class="inventory-fab"', 'class="inventory-fab stock-fab"', 'id="stockView"', 'id="stockPalletDialog"', 'id="stockPalletDetailDialog"', 'id="stockPlannerOptions"', 'id="stockPackSearch"', 'id="stockPlannerPackOptions"', 'id="addStockSearchPart"', 'id="stockSelectedParts"', 'id="stockPlannerResults"', 'data-i18n-aria="stock.planner.aria"', 'id="undoLatestBtn"', 'id="orderLifecycle"', 'id="orderSendBar"', 'id="sendOrderBtn"', 'data-settings-tab="general"', 'data-settings-tab="data"', 'data-settings-tab="tips"', 'id="settingsDataPanel"', 'id="settingsTipsPanel"', 'name="overflowing"', 'data-dismiss-notice="inventory-info"', 'href="#icon-home"', 'href="#icon-projects"', 'href="#icon-box"', 'href="#icon-orders"', 'href="#icon-data"', 'id="languageSelect"', '<option value="en">English</option>', '<option value="uk">Українська</option>', '<option value="ru">Русский</option>', '<option value="pl">Polski</option>'];
 for (const fragment of requiredHtml) {
   if (!html.includes(fragment)) throw new Error(`index.html is missing requested interface: ${fragment}`);
 }
@@ -126,6 +126,18 @@ if (!app.includes('category: part.category, quantityNeeded')) {
 }
 if (!app.includes("const notes = String(part?.notes || '').trim()") || !app.includes('class="order-part-notes"') || !app.includes("t('orders.partNotes', { notes })")) {
   throw new Error('Assembly Order checklist lines must conditionally display master-part notes.');
+}
+if (!app.includes("const UNDO_STORAGE_KEY = 'storeflow-undo-v1'") || !app.includes('buildUndoChanges') || !app.includes('applyUndoChanges') || !app.includes('persistUndoHistory') || !app.includes('undoLatestChange')) {
+  throw new Error('Persistent latest-change undo support is missing.');
+}
+if (!app.includes("const UNDO_COLLECTION_KEYS = ['projects', 'parts', 'orders', 'stockPallets', 'activity']") || !app.includes('pendingUndoActivities.push(activity)')) {
+  throw new Error('Undo must restore both domain records and Latest Updates activity.');
+}
+if (!app.includes('function sendOrder()') || !app.includes("addActivity('activity.orderSent'") || !app.includes('packed: false') || !app.includes('order.sentAt = now') || !app.includes('state.selectedOrderId = nextOrder.id')) {
+  throw new Error('Send Order must lock the completed order and open a fresh unchecked copy.');
+}
+if (!app.includes('orders.filter(order => !order.sentAt)') || !app.includes("if (order?.sentAt) return showToast(t('message.sentOrderLocked'))")) {
+  throw new Error('Sent orders must stay deducted and remain locked against later checklist edits.');
 }
 if (/showToast\(\s*['"`]/.test(app) || /window\.confirm\(\s*['"`]/.test(app)) {
   throw new Error('Toast and confirmation text must come from the translation catalogue.');

@@ -2,6 +2,11 @@
   'use strict';
 
   const STORAGE_KEY = 'storeflow-state-v1';
+  const UNDO_STORAGE_KEY = 'storeflow-undo-v1';
+  const UNDO_COLLECTION_KEYS = ['projects', 'parts', 'orders', 'stockPallets', 'activity'];
+  const UNDO_SCALAR_KEYS = ['language', 'activeProjectId', 'selectedOrderId', 'dismissedNotices'];
+  const MAX_UNDO_HISTORY = 20;
+  const MAX_PERSISTED_UNDO_BYTES = 1500000;
   const I18N = window.StoreFlowI18n;
   const LANGUAGE_CODES = new Set(I18N.languages.map(language => language.code));
   const CATEGORIES = ['Desk', 'Bed', 'Wardrobe', 'Kitchen', 'Infills', 'Other'];
@@ -22,6 +27,7 @@
   let selectedStockSuggestionPartId = null;
   let activeStockSuggestionIndex = -1;
   let activeSettingsTab = 'general';
+  let pendingUndoActivities = [];
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -80,7 +86,7 @@
   function createInitialState() {
     const now = new Date().toISOString();
     return {
-      version: 6,
+      version: 7,
       language: 'en',
       activeProjectId: null,
       selectedOrderId: null,
@@ -441,8 +447,12 @@
         id: order.id || uid('order'),
         projectId: order.projectId,
         name: String(order.name || 'Untitled order'),
+        seriesName: String(order.seriesName || order.name || 'Untitled order'),
+        cycle: positiveIntegerOrBlank(order.cycle) || 1,
         notes: String(order.notes || ''),
         createdAt: order.createdAt || new Date().toISOString(),
+        sentAt: order.sentAt ? String(order.sentAt) : '',
+        previousOrderId: String(order.previousOrderId || ''),
         items: (Array.isArray(order.items) ? order.items : []).map(item => {
           const partId = oldToNew.get(item.partId) || item.partId;
           return {
@@ -484,7 +494,7 @@
       .filter(pallet => pallet.deliveryNumber && pallet.palletNumber);
 
     return {
-      version: 6,
+      version: 7,
       language: LANGUAGE_CODES.has(source.language) ? source.language : 'en',
       activeProjectId: validProjectIds.has(source.activeProjectId) ? source.activeProjectId : (projects[0]?.id || null),
       selectedOrderId: source.selectedOrderId || null,
@@ -514,6 +524,138 @@
   }
 
   let state = loadState();
+  let undoHistory = loadUndoHistory();
+  let undoBaseline = captureUndoState(state);
+
+  function cloneData(value) {
+    if (value === undefined) return undefined;
+    return typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+  }
+
+  function captureUndoState(source) {
+    const snapshot = {};
+    UNDO_SCALAR_KEYS.forEach(key => { snapshot[key] = cloneData(source[key]); });
+    UNDO_COLLECTION_KEYS.forEach(key => { snapshot[key] = cloneData(Array.isArray(source[key]) ? source[key] : []); });
+    return snapshot;
+  }
+
+  function sameData(left, right) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
+  function buildUndoChanges(before, after) {
+    const scalarChanges = {};
+    const collectionChanges = {};
+
+    UNDO_SCALAR_KEYS.forEach(key => {
+      if (!sameData(before[key], after[key])) scalarChanges[key] = cloneData(before[key]);
+    });
+
+    UNDO_COLLECTION_KEYS.forEach(key => {
+      const beforeItems = Array.isArray(before[key]) ? before[key] : [];
+      const afterItems = Array.isArray(after[key]) ? after[key] : [];
+      const beforeById = new Map(beforeItems.map(item => [item.id, item]));
+      const afterById = new Map(afterItems.map(item => [item.id, item]));
+      const records = [...new Set([...beforeById.keys(), ...afterById.keys()])]
+        .filter(id => !sameData(beforeById.get(id), afterById.get(id)))
+        .map(id => ({ id, before: beforeById.has(id) ? cloneData(beforeById.get(id)) : null }));
+      if (records.length) collectionChanges[key] = { records, beforeOrder: beforeItems.map(item => item.id) };
+    });
+
+    if (!Object.keys(scalarChanges).length && !Object.keys(collectionChanges).length) return null;
+    return { scalars: scalarChanges, collections: collectionChanges };
+  }
+
+  function loadUndoHistory() {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(UNDO_STORAGE_KEY) || '[]');
+      return Array.isArray(parsed)
+        ? parsed.filter(entry => entry && entry.changes && typeof entry.changes === 'object').slice(0, MAX_UNDO_HISTORY)
+        : [];
+    } catch (error) {
+      console.warn('StoreFlow could not load undo history:', error);
+      return [];
+    }
+  }
+
+  function persistUndoHistory() {
+    undoHistory = undoHistory.slice(0, MAX_UNDO_HISTORY);
+    let persisted = [...undoHistory];
+    while (persisted.length && JSON.stringify(persisted).length > MAX_PERSISTED_UNDO_BYTES) persisted.pop();
+    while (true) {
+      try {
+        if (persisted.length) window.localStorage.setItem(UNDO_STORAGE_KEY, JSON.stringify(persisted));
+        else window.localStorage.removeItem(UNDO_STORAGE_KEY);
+        return;
+      } catch (error) {
+        if (!persisted.length) {
+          console.warn('StoreFlow could not persist undo history:', error);
+          return;
+        }
+        persisted.pop();
+      }
+    }
+  }
+
+  function commitPendingUndo() {
+    const after = captureUndoState(state);
+    if (pendingUndoActivities.length) {
+      const changes = buildUndoChanges(undoBaseline, after);
+      if (changes) {
+        const activity = pendingUndoActivities[0];
+        undoHistory.unshift({
+          id: uid('undo'),
+          createdAt: new Date().toISOString(),
+          textKey: activity.textKey || '',
+          textParams: cloneData(activity.textParams || {}),
+          text: String(activity.text || ''),
+          changes
+        });
+        persistUndoHistory();
+      }
+    }
+    pendingUndoActivities = [];
+    undoBaseline = after;
+  }
+
+  function syncUndoBaseline() {
+    if (!pendingUndoActivities.length) undoBaseline = captureUndoState(state);
+  }
+
+  function applyUndoChanges(changes) {
+    Object.entries(changes?.scalars || {}).forEach(([key, value]) => { state[key] = cloneData(value); });
+    Object.entries(changes?.collections || {}).forEach(([key, change]) => {
+      const current = Array.isArray(state[key]) ? state[key] : [];
+      const byId = new Map(current.map(item => [item.id, item]));
+      (change.records || []).forEach(record => {
+        if (record.before === null) byId.delete(record.id);
+        else byId.set(record.id, cloneData(record.before));
+      });
+      const beforeOrder = Array.isArray(change.beforeOrder) ? change.beforeOrder : [];
+      const beforeIds = new Set(beforeOrder);
+      state[key] = [
+        ...beforeOrder.map(id => byId.get(id)).filter(Boolean),
+        ...[...byId.values()].filter(item => !beforeIds.has(item.id))
+      ];
+    });
+  }
+
+  function undoActivityLabel(entry) {
+    return entry?.textKey ? t(entry.textKey, entry.textParams || {}) : (entry?.text || t('dashboard.latestChange'));
+  }
+
+  function undoLatestChange() {
+    const entry = undoHistory.shift();
+    if (!entry) return;
+    applyUndoChanges(entry.changes);
+    pendingUndoActivities = [];
+    persistUndoHistory();
+    ensureValidSelections();
+    undoBaseline = captureUndoState(state);
+    renderAll();
+    switchView(currentView);
+    showToast(t('message.undoComplete', { action: undoActivityLabel(entry) }));
+  }
 
   function t(key, params = {}) {
     return I18N.t(state.language, key, params);
@@ -541,11 +683,11 @@
     sidebar: $('.sidebar'), menuBtn: $('#menuBtn'), pageTitle: $('#pageTitle'), pageEyebrow: $('#pageEyebrow'),
     alertBar: $('#alertBar'), storageNotice: $('#storageNotice'), inventoryNote: $('#inventoryNote'),
     statProjects: $('#statProjects'), statParts: $('#statParts'), statLow: $('#statLow'), statOut: $('#statOut'), dashboardProjectName: $('#dashboardProjectName'),
-    categoryProgress: $('#categoryProgress'), activityList: $('#activityList'),
+    categoryProgress: $('#categoryProgress'), activityList: $('#activityList'), undoLatestBtn: $('#undoLatestBtn'),
     projectCards: $('#projectCards'), newProjectBtn: $('#newProjectBtn'),
     inventorySearch: $('#inventorySearch'), inventoryProjectFilter: $('#inventoryProjectFilter'), inventoryStockFilter: $('#inventoryStockFilter'), inventorySort: $('#inventorySort'), inventoryCategoryFilter: $('#inventoryCategoryFilter'),
     addPartBtn: $('#addPartBtn'), inventoryCards: $('#inventoryCards'), pendingPalletMatchNotice: $('#pendingPalletMatchNotice'),
-    orderSelect: $('#orderSelect'), newOrderBtn: $('#newOrderBtn'), deleteOrderBtn: $('#deleteOrderBtn'), orderSummary: $('#orderSummary'), orderBoards: $('#orderBoards'),
+    orderSelect: $('#orderSelect'), newOrderBtn: $('#newOrderBtn'), deleteOrderBtn: $('#deleteOrderBtn'), orderSummary: $('#orderSummary'), orderLifecycle: $('#orderLifecycle'), orderBoards: $('#orderBoards'), orderSendBar: $('#orderSendBar'), sendOrderBtn: $('#sendOrderBtn'),
     newStockPalletBtn: $('#newStockPalletBtn'), stockSummary: $('#stockSummary'), stockSearch: $('#stockSearch'), stockPackSearch: $('#stockPackSearch'), stockSearchInfo: $('#stockSearchInfo'), stockPlannerOptions: $('#stockPlannerOptions'), stockPlannerPackOptions: $('#stockPlannerPackOptions'), addStockSearchPart: $('#addStockSearchPart'), clearStockSearch: $('#clearStockSearch'), stockSelectedParts: $('#stockSelectedParts'), stockPlannerResults: $('#stockPlannerResults'), stockPalletGrid: $('#stockPalletGrid'),
     languageSelect: $('#languageSelect'), exportBtn: $('#exportBtn'), importInput: $('#importInput'), resetBtn: $('#resetBtn'), settingsTabs: $('.settings-tabs'),
     projectDialog: $('#projectDialog'), projectForm: $('#projectForm'), projectDialogTitle: $('#projectDialogTitle'), projectPhotoInput: $('#projectPhotoInput'),
@@ -574,8 +716,10 @@
   }
 
   function addActivity(textKey, detail = '') {
-    state.activity.unshift({ id: uid('activity'), textKey, detail, createdAt: new Date().toISOString() });
+    const activity = { id: uid('activity'), textKey, detail, createdAt: new Date().toISOString() };
+    state.activity.unshift(activity);
     state.activity = state.activity.slice(0, 40);
+    pendingUndoActivities.push(activity);
   }
 
   function formatDate(iso) {
@@ -619,6 +763,18 @@
       state.selectedOrderId = selected.id;
     }
     return selected || null;
+  }
+
+  function orderSeriesName(order) {
+    return String(order?.seriesName || order?.name || '').trim();
+  }
+
+  function nextOrderCycle(order) {
+    const seriesName = orderSeriesName(order);
+    const highestCycle = state.orders
+      .filter(candidate => candidate.projectId === order.projectId && orderSeriesName(candidate) === seriesName)
+      .reduce((highest, candidate) => Math.max(highest, positiveIntegerOrBlank(candidate.cycle) || 1), 1);
+    return Math.max(highestCycle, positiveIntegerOrBlank(order.cycle) || 1) + 1;
   }
 
   function stockStatus(quantity) {
@@ -687,6 +843,7 @@
 
   function renderAll() {
     ensureValidSelections();
+    commitPendingUndo();
     applyTranslations();
     renderProjectSelectors();
     renderDashboard();
@@ -698,6 +855,7 @@
     renderInventoryNotice();
     renderSettingsTabs();
     saveState();
+    syncUndoBaseline();
   }
 
   function renderProjectSelectors() {
@@ -752,6 +910,7 @@
     renderAlertBar();
     renderInventoryNotice();
     saveState();
+    syncUndoBaseline();
   }
 
   function renderDashboard() {
@@ -763,6 +922,14 @@
     els.statLow.textContent = lowParts.length;
     els.statOut.textContent = outParts.length;
     els.dashboardProjectName.textContent = getActiveProject()?.name || t('dashboard.createFirstProject');
+    const latestUndo = undoHistory[0] || null;
+    els.undoLatestBtn.disabled = !latestUndo;
+    els.undoLatestBtn.setAttribute('aria-label', latestUndo
+      ? t('dashboard.undoAria', { action: undoActivityLabel(latestUndo) })
+      : t('dashboard.undoUnavailable'));
+    els.undoLatestBtn.title = latestUndo
+      ? t('dashboard.undoAria', { action: undoActivityLabel(latestUndo) })
+      : t('dashboard.undoUnavailable');
 
     const order = getSelectedOrder();
     els.categoryProgress.innerHTML = CATEGORIES.map(category => {
@@ -904,11 +1071,14 @@
 
   function renderOrders() {
     const orders = getActiveOrders();
-    els.orderSelect.innerHTML = orders.length ? orders.map(order => `<option value="${esc(order.id)}">${esc(order.name)}</option>`).join('') : `<option value="">${esc(t('orders.none'))}</option>`;
+    els.orderSelect.innerHTML = orders.length ? orders.map(order => `<option value="${esc(order.id)}">${esc(order.name)}${order.sentAt ? ` · ${esc(t('orders.sentStatus'))}` : ''}</option>`).join('') : `<option value="">${esc(t('orders.none'))}</option>`;
     els.orderSelect.disabled = !orders.length;
     els.deleteOrderBtn.disabled = !orders.length;
     const order = getSelectedOrder();
     if (order) els.orderSelect.value = order.id;
+    els.orderLifecycle.classList.add('hidden');
+    els.orderLifecycle.innerHTML = '';
+    els.orderSendBar.classList.add('hidden');
 
     if (!state.activeProjectId) {
       els.orderSummary.innerHTML = '';
@@ -921,6 +1091,7 @@
       return;
     }
 
+    const sent = Boolean(order.sentAt);
     const total = order.items.length;
     const packed = order.items.filter(item => item.packed).length;
     const shortages = order.items.filter(item => {
@@ -929,6 +1100,15 @@
       return !part || part.quantity < item.quantityNeeded;
     }).length;
     els.orderSummary.innerHTML = `<div class="summary-chip"><span>${esc(t('orders.requiredLines'))}</span><strong>${total}</strong></div><div class="summary-chip"><span>${esc(t('orders.packedLines'))}</span><strong>${packed}</strong></div><div class="summary-chip"><span>${esc(t('orders.shortages'))}</span><strong>${shortages}</strong></div>`;
+    els.orderSendBar.classList.remove('hidden');
+    els.orderSendBar.classList.toggle('sent', sent);
+    els.sendOrderBtn.disabled = sent || !order.items.length;
+    els.sendOrderBtn.textContent = t(sent ? 'orders.sentButton' : 'orders.send');
+    els.sendOrderBtn.title = sent ? t('orders.sentLocked') : (!order.items.length ? t('orders.sendEmpty') : t('orders.sendHelp'));
+    if (sent) {
+      els.orderLifecycle.innerHTML = `<strong>${esc(t('orders.sentBannerTitle'))}</strong><span>${esc(t('orders.sentBannerBody', { date: formatDate(order.sentAt) }))}</span>`;
+      els.orderLifecycle.classList.remove('hidden');
+    }
 
     els.orderBoards.innerHTML = CATEGORIES.map(category => {
       const items = order.items.filter(item => orderItemCategory(item) === category);
@@ -941,17 +1121,17 @@
         const metadata = part ? [size !== '—' ? size : '', assemblyLabel(part) !== '—' ? t('orders.partMeta', { assembly: assemblyLabel(part) }) : ''].filter(Boolean).join(' · ') : '';
         const stockText = item.packed ? t('orders.packedStock') : t('orders.sharedStock', { count: available, metadata: metadata ? ` · ${metadata}` : '' });
         const notes = String(part?.notes || '').trim();
-        return `<div class="check-item ${item.packed ? 'packed' : ''}">
-          <input type="checkbox" data-action="toggle-pack" data-item-id="${esc(item.id)}" ${item.packed ? 'checked' : ''} ${!part ? 'disabled' : ''} />
+        return `<div class="check-item ${item.packed ? 'packed' : ''} ${sent ? 'sent-order-item' : ''}">
+          <input type="checkbox" data-action="toggle-pack" data-item-id="${esc(item.id)}" ${item.packed ? 'checked' : ''} ${!part || sent ? 'disabled' : ''} />
           <div class="part-label"><div class="part-identity-inline">${partIdentityMarkup(part)}</div><span>${esc(stockText)}</span>${notes ? `<span class="order-part-notes">${esc(t('orders.partNotes', { notes }))}</span>` : ''}</div>
           <label class="needed-editor ${insufficient ? 'short' : ''}">
             <span>${esc(t('orders.needed'))}</span>
-            <input type="number" min="1" step="1" inputmode="numeric" value="${item.quantityNeeded}" data-action="edit-needed" data-item-id="${esc(item.id)}" aria-label="${esc(t('orders.neededAria', { name: codeName }))}" ${!part ? 'disabled' : ''} />
+            <input type="number" min="1" step="1" inputmode="numeric" value="${item.quantityNeeded}" data-action="edit-needed" data-item-id="${esc(item.id)}" aria-label="${esc(t('orders.neededAria', { name: codeName }))}" ${!part || sent ? 'disabled' : ''} />
           </label>
-          <button class="remove-item" data-action="remove-order-item" data-item-id="${esc(item.id)}" aria-label="${esc(t('orders.removeAria'))}">×</button>
+          <button class="remove-item" data-action="remove-order-item" data-item-id="${esc(item.id)}" aria-label="${esc(t('orders.removeAria'))}" ${sent ? 'disabled' : ''}>×</button>
         </div>`;
       }).join('') : `<div class="column-empty">${esc(t('orders.noneInSection'))}</div>`;
-      return `<article class="order-column"><div class="order-column-head"><h3>${esc(categoryLabel(category))}</h3><button data-action="add-order-item" data-category="${category}">${esc(t('orders.addPart'))}</button></div><div class="checklist">${itemHtml}</div></article>`;
+      return `<article class="order-column ${sent ? 'sent-order-column' : ''}"><div class="order-column-head"><h3>${esc(categoryLabel(category))}</h3><button data-action="add-order-item" data-category="${category}" ${sent ? 'disabled' : ''}>${esc(t('orders.addPart'))}</button></div><div class="checklist">${itemHtml}</div></article>`;
     }).join('');
   }
 
@@ -1543,6 +1723,7 @@
   function openOrderItemDialog(category) {
     const order = getSelectedOrder();
     if (!order) return showToast(t('message.createOrderFirst'));
+    if (order.sentAt) return showToast(t('message.sentOrderLocked'));
     const includedPartIds = new Set(order.items.map(item => item.partId));
     const matchingParts = state.parts
       .filter(part => partInProject(part, state.activeProjectId) && part.category === category)
@@ -1596,7 +1777,7 @@
   function removePartFromProject(part, projectId) {
     if (!partInProject(part, projectId)) return 0;
     let removedItems = 0;
-    state.orders.filter(order => order.projectId === projectId).forEach(order => {
+    state.orders.filter(order => order.projectId === projectId && !order.sentAt).forEach(order => {
       order.items.filter(item => item.partId === part.id).forEach(item => {
         if (item.packed) part.quantity += item.quantityNeeded;
         removedItems += 1;
@@ -1621,7 +1802,7 @@
   }
 
   function restorePackedStockForOrders(orders) {
-    orders.forEach(order => order.items.filter(item => item.packed).forEach(item => {
+    orders.filter(order => !order.sentAt).forEach(order => order.items.filter(item => item.packed).forEach(item => {
       const part = state.parts.find(candidate => candidate.id === item.partId);
       if (part) part.quantity += item.quantityNeeded;
     }));
@@ -1645,13 +1826,49 @@
   function deleteOrder(orderId) {
     const order = state.orders.find(candidate => candidate.id === orderId);
     if (!order) return;
-    if (!window.confirm(t('message.orderDeletedConfirm', { name: order.name }))) return;
+    if (!window.confirm(t(order.sentAt ? 'message.sentOrderDeletedConfirm' : 'message.orderDeletedConfirm', { name: order.name }))) return;
     restorePackedStockForOrders([order]);
     state.orders = state.orders.filter(candidate => candidate.id !== orderId);
     addActivity('activity.orderDeleted', order.name);
     state.selectedOrderId = null;
     renderAll();
-    showToast(t('message.orderDeleted'));
+    showToast(t(order.sentAt ? 'message.sentOrderDeleted' : 'message.orderDeleted'));
+  }
+
+  function sendOrder() {
+    const order = getSelectedOrder();
+    if (!order) return showToast(t('message.createOrderFirst'));
+    if (order.sentAt) return showToast(t('message.sentOrderLocked'));
+    if (!order.items.length) return showToast(t('message.sendOrderEmpty'));
+    if (!window.confirm(t('message.sendOrderConfirm', { name: order.name }))) return;
+
+    const now = new Date().toISOString();
+    const seriesName = orderSeriesName(order);
+    const cycle = nextOrderCycle(order);
+    const nextOrder = {
+      id: uid('order'),
+      projectId: order.projectId,
+      name: t('orders.repeatName', { name: seriesName, number: cycle }),
+      seriesName,
+      cycle,
+      notes: order.notes,
+      createdAt: now,
+      sentAt: '',
+      previousOrderId: order.id,
+      items: order.items.map(item => ({
+        id: uid('item'),
+        partId: item.partId,
+        category: orderItemCategory(item),
+        quantityNeeded: item.quantityNeeded,
+        packed: false
+      }))
+    };
+    order.sentAt = now;
+    state.orders.push(nextOrder);
+    state.selectedOrderId = nextOrder.id;
+    addActivity('activity.orderSent', `${order.name} → ${nextOrder.name}`);
+    renderAll();
+    showToast(t('message.orderSent', { name: nextOrder.name }));
   }
 
   function deletePart(partId) {
@@ -1745,6 +1962,7 @@
 
   function togglePacked(itemId, shouldPack) {
     const order = getSelectedOrder();
+    if (order?.sentAt) return showToast(t('message.sentOrderLocked'));
     const item = order?.items.find(candidate => candidate.id === itemId);
     if (!item) return;
     const part = state.parts.find(candidate => candidate.id === item.partId);
@@ -1772,6 +1990,7 @@
 
   function updateOrderItemQuantity(itemId, requestedQuantity) {
     const order = getSelectedOrder();
+    if (order?.sentAt) return showToast(t('message.sentOrderLocked'));
     const item = order?.items.find(candidate => candidate.id === itemId);
     if (!item) return;
     const part = state.parts.find(candidate => candidate.id === item.partId);
@@ -1809,6 +2028,7 @@
 
   function removeOrderItem(itemId) {
     const order = getSelectedOrder();
+    if (order?.sentAt) return showToast(t('message.sentOrderLocked'));
     const item = order?.items.find(candidate => candidate.id === itemId);
     if (!item) return;
     const part = state.parts.find(candidate => candidate.id === item.partId);
@@ -1819,6 +2039,7 @@
   }
 
   els.menuBtn.addEventListener('click', () => els.sidebar.classList.toggle('open'));
+  els.undoLatestBtn.addEventListener('click', undoLatestChange);
   document.addEventListener('click', event => {
     if (window.innerWidth <= 820 && els.sidebar.classList.contains('open') && !els.sidebar.contains(event.target) && event.target !== els.menuBtn) els.sidebar.classList.remove('open');
     if (!event.target.closest('.stock-part-search-shell')) closeStockPartSuggestions();
@@ -2040,7 +2261,8 @@
   els.orderForm.addEventListener('submit', event => {
     event.preventDefault();
     const data = new FormData(els.orderForm);
-    const order = { id: uid('order'), projectId: state.activeProjectId, name: String(data.get('name') || '').trim(), notes: String(data.get('notes') || '').trim(), createdAt: new Date().toISOString(), items: [] };
+    const name = String(data.get('name') || '').trim();
+    const order = { id: uid('order'), projectId: state.activeProjectId, name, seriesName: name, cycle: 1, notes: String(data.get('notes') || '').trim(), createdAt: new Date().toISOString(), sentAt: '', previousOrderId: '', items: [] };
     if (!order.name) return;
     state.orders.push(order);
     state.selectedOrderId = order.id;
@@ -2054,6 +2276,7 @@
     event.preventDefault();
     const order = getSelectedOrder();
     if (!order) return;
+    if (order.sentAt) return showToast(t('message.sentOrderLocked'));
     const data = new FormData(els.orderItemForm);
     const partId = String(data.get('partId') || '');
     const quantityNeeded = Math.max(1, Number(data.get('quantityNeeded')) || 1);
@@ -2407,6 +2630,7 @@
 
   els.orderSelect.addEventListener('change', () => { state.selectedOrderId = els.orderSelect.value || null; renderAll(); });
   els.deleteOrderBtn.addEventListener('click', () => { const order = getSelectedOrder(); if (order) deleteOrder(order.id); });
+  els.sendOrderBtn.addEventListener('click', sendOrder);
   els.orderBoards.addEventListener('click', event => {
     const button = event.target.closest('button[data-action]');
     if (!button) return;
@@ -2468,6 +2692,7 @@
     const language = state.language;
     state = createInitialState();
     state.language = language;
+    addActivity('activity.dataReset');
     renderAll();
     showToast(t('message.resetDone'));
   });

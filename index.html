@@ -64,7 +64,7 @@
 <div class="panel-head"><div><p class="eyebrow" data-i18n="dashboard.currentProject">CURRENT PROJECT</p><h3 data-i18n="dashboard.noProject" id="dashboardProjectName">No project selected</h3></div><button class="secondary" data-i18n="dashboard.openOrders" data-jump="orders">Open orders</button></div>
 <div class="category-progress" id="categoryProgress"></div>
 </article>
-<article class="panel span-2"><div class="panel-head"><div><p class="eyebrow" data-i18n="dashboard.recentActivity">RECENT ACTIVITY</p><h3 data-i18n="dashboard.latestUpdates">Latest updates</h3></div></div><div class="activity-list" id="activityList"></div></article>
+<article class="panel span-2"><div class="panel-head activity-panel-head"><div><p class="eyebrow" data-i18n="dashboard.recentActivity">RECENT ACTIVITY</p><h3 data-i18n="dashboard.latestUpdates">Latest updates</h3></div><button class="secondary activity-undo-button" data-i18n="dashboard.undoLatest" disabled="" id="undoLatestBtn" type="button">↶ Undo latest</button></div><div class="activity-list" id="activityList"></div></article>
       </section>
 <section class="view" id="projectsView">
 <div class="section-toolbar">
@@ -113,7 +113,9 @@
 <div class="filter-row"><select id="orderSelect"></select><button class="secondary" data-i18n="orders.new" id="newOrderBtn">+ New order</button><button class="danger ghost" data-i18n="orders.delete" id="deleteOrderBtn">Delete order</button></div>
 </div>
 <div class="order-summary" id="orderSummary"></div>
+<div class="order-lifecycle hidden" id="orderLifecycle" role="status"></div>
 <div class="order-grid" id="orderBoards"></div>
+<div class="order-send-bar hidden" id="orderSendBar"><div><strong data-i18n="orders.sendTitle">Send this completed order</strong><span data-i18n="orders.sendHelp">Checked quantities stay deducted. StoreFlow then opens a fresh copy with the same parts and every box unchecked.</span></div><button class="primary" data-i18n="orders.send" id="sendOrderBtn" type="button">Send the order</button></div>
 </section>
 <section class="view" id="stockView">
 <div class="order-summary stock-summary" id="stockSummary"></div>

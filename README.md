@@ -35,9 +35,11 @@ StoreFlow is a mobile-first Progressive Web App for managing shared warehouse st
 - Link and unlink existing master parts from a project.
 - Assembly orders are divided into Desk, Bed, Wardrobe, Kitchen, Infills and Other. Each section only offers project parts assigned to that exact master-part category.
 - Assembly Order checklist lines show their Master Inventory notes when present; parts without notes keep the compact existing layout.
+- A persistent **Undo latest** control in Latest Updates reverses completed data changes one at a time, including related inventory and activity-log changes.
 - Parts already present on a pallet checklist are hidden from its add-part selector, including packed lines.
 - Needed quantities can be edited directly on checklist rows, with packed-stock differences reconciled automatically.
 - Packing an order item deducts it from master stock; unpacking restores it.
+- **Send the order** locks the completed order without restoring deducted stock, then immediately creates and opens a fresh copy with the same parts, quantities and notes but every checklist box unchecked.
 - Low-stock warnings at four units or fewer and out-of-stock warnings at zero.
 - Open filtered low-stock and out-of-stock lists directly from the dashboard cards.
 - JSON backup export and restore, including stored pallets and overflow status.
