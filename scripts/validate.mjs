@@ -115,6 +115,9 @@ if (!app.includes('partInProject(part, state.activeProjectId) && part.category =
 if (!app.includes('category: part.category, quantityNeeded')) {
   throw new Error('New checklist lines must store the selected master part category.');
 }
+if (!app.includes("const notes = String(part?.notes || '').trim()") || !app.includes('class="order-part-notes"') || !app.includes("t('orders.partNotes', { notes })")) {
+  throw new Error('Assembly Order checklist lines must conditionally display master-part notes.');
+}
 if (/showToast\(\s*['"`]/.test(app) || /window\.confirm\(\s*['"`]/.test(app)) {
   throw new Error('Toast and confirmation text must come from the translation catalogue.');
 }

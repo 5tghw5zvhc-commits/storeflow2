@@ -891,9 +891,10 @@
         const size = part ? dimensionLabel(part) : '';
         const metadata = part ? [size !== '—' ? size : '', assemblyLabel(part) !== '—' ? t('orders.partMeta', { assembly: assemblyLabel(part) }) : ''].filter(Boolean).join(' · ') : '';
         const stockText = item.packed ? t('orders.packedStock') : t('orders.sharedStock', { count: available, metadata: metadata ? ` · ${metadata}` : '' });
+        const notes = String(part?.notes || '').trim();
         return `<div class="check-item ${item.packed ? 'packed' : ''}">
           <input type="checkbox" data-action="toggle-pack" data-item-id="${esc(item.id)}" ${item.packed ? 'checked' : ''} ${!part ? 'disabled' : ''} />
-          <div class="part-label"><div class="part-identity-inline">${partIdentityMarkup(part)}</div><span>${esc(stockText)}</span></div>
+          <div class="part-label"><div class="part-identity-inline">${partIdentityMarkup(part)}</div><span>${esc(stockText)}</span>${notes ? `<span class="order-part-notes">${esc(t('orders.partNotes', { notes }))}</span>` : ''}</div>
           <label class="needed-editor ${insufficient ? 'short' : ''}">
             <span>${esc(t('orders.needed'))}</span>
             <input type="number" min="1" step="1" inputmode="numeric" value="${item.quantityNeeded}" data-action="edit-needed" data-item-id="${esc(item.id)}" aria-label="${esc(t('orders.neededAria', { name: codeName }))}" ${!part ? 'disabled' : ''} />

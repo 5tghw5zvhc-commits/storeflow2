@@ -255,6 +255,7 @@ tbody tr:last-child td { border-bottom: 0; }
 .part-label strong, .part-label span { display: block; }
 .part-label strong { font-size: 13px; }
 .part-label span { margin-top: 3px; font-size: 11px; color: var(--muted); }
+.part-label .order-part-notes { margin-top: 7px; padding-left: 8px; border-left: 2px solid #bfd5d0; color: #405953; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .needed-editor { display: grid; gap: 3px; justify-items: center; color: var(--muted); font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; }
 .needed-editor input { width: 68px; min-height: 34px; padding: 5px 7px; border-radius: 9px; text-align: center; font-weight: 900; color: var(--text); background: #f4f7f6; }
 .needed-editor.short { color: var(--danger); }
