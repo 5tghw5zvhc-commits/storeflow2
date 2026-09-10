@@ -5,11 +5,11 @@ const data = { projects: [{id:'p1',name:'Room A',remainingOrders:3,planningOrder
 const saved = new Map([['storeflow-state-v1',JSON.stringify(data)]]);
 function boot(){
  const nodes=new Map();
- const node=(key)=>{if(!nodes.has(key))nodes.set(key,{value:'',options:[],innerHTML:'',textContent:'',dataset:{},style:{},listeners:{},classList:{add(){},remove(){},toggle(){},contains(){return false}},addEventListener(e,fn){this.listeners[e]=fn},setAttribute(){},removeAttribute(){},querySelector:s=>node(key+' '+s),querySelectorAll:()=>[],contains:()=>false,closest(){return this}});return nodes.get(key)};
+ const node=(key)=>{if(!nodes.has(key))nodes.set(key,{value:'',options:[],innerHTML:'',textContent:'',dataset:{},style:{},listeners:{},classList:{add(){},remove(){},toggle(){},contains(){return false}},addEventListener(e,fn){this.listeners[e]=fn},setAttribute(){},removeAttribute(){},hasAttribute(){return false},querySelector:s=>node(key+' '+s),querySelectorAll:()=>[],contains:()=>false,closest(){return this}});return nodes.get(key)};
  const document={querySelector:node,querySelectorAll:()=>[],addEventListener(){},documentElement:node('html'),body:node('body')};
- const c={console,document,navigator:{},location:{protocol:'file:',hostname:''},Intl,Date,Math,JSON,Map,Set,structuredClone,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:k=>saved.get(k)||null,setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)},innerWidth:390,confirm:()=>true,addEventListener(){}};
+ const c={FormData:class { constructor(form){this.data=form.formData||{}} get(key){return this.data[key]??null} getAll(key){return [this.data[key]].filter(v=>v!=null)} },console,document,navigator:{},location:{protocol:'file:',hostname:''},Intl,Date,Math,JSON,Map,Set,structuredClone,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:k=>saved.get(k)||null,setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)},innerWidth:390,confirm:()=>true,addEventListener(){}};
  c.window=c;c.globalThis=c;vm.createContext(c);vm.runInContext(fs.readFileSync('src/i18n.js','utf8'),c);
- let app=fs.readFileSync('src/app.js','utf8');app=app.replace('  renderAll();\n  switchView(currentView);\n})();','  globalThis.testApi = { getState: () => state, calculateManufacturingPlan, renderAll, renderPlanning, migrateState, sendOrder, undoLatestChange };\n  renderAll();\n  switchView(currentView);\n})();');vm.runInContext(app,c);
+ let app=fs.readFileSync('src/app.js','utf8');app=app.replace('  renderAll();\n  switchView(currentView);\n})();','  globalThis.testApi = { getState: () => state, calculateManufacturingPlan, renderAll, renderPlanning, migrateState, sendOrder, undoLatestChange, saveState };\n  renderAll();\n  switchView(currentView);\n})();');vm.runInContext(app,c);
  return {api:c.testApi,nodes};
 }
 let {api,nodes}=boot();
@@ -48,3 +48,35 @@ missing.projects[0].planningOrderId='o1';missing.orders[1].items.pop();assert.ok
 const zero=structuredClone(api.getState());zero.projects.forEach(p=>p.remainingOrders=0);assert.equal(api.calculateManufacturingPlan(zero).rows.length,0);
 const sent=structuredClone(api.getState());sent.orders[0].sentAt='2026-08-05';assert.equal(api.calculateManufacturingPlan(sent).rows[0].packed,0);
 console.log('Planning tests passed: shared stock, pack identity, unresolved stock, rendering, persistence, undo, Send Order, missing templates, zero demand and four languages.');
+
+// Every dependent ledger refreshes the existing table without navigating to Planning.
+saved.clear();saved.set('storeflow-state-v1',JSON.stringify(data));({api,nodes}=boot());
+const sharedShortage = () => {
+ const html=nodes.get('#planningResults').innerHTML;
+ const row=html.match(/<tr[^>]*><td>[\s\S]*?Shared board[\s\S]*?<small>1\/1 ·[\s\S]*?<td><strong>(\d+)<\/strong><\/td>/);
+ assert.ok(row, 'Shared part row must be present');return Number(row[1]);
+};
+assert.equal(sharedShortage(),5);
+const inventoryPlus={dataset:{action:'plus',id:'a'},closest(){return this}};
+nodes.get('#inventoryCards').listeners.click({target:inventoryPlus});assert.equal(sharedShortage(),4);
+const stockQuantity={dataset:{palletId:'s1',itemId:'s1a'},value:'6',closest(){return this}};
+nodes.get('#stockPalletGrid').listeners.change({target:stockQuantity});assert.equal(sharedShortage(),2);
+const submit=(id,fields)=>{const form=nodes.get(id);form.formData=fields;form.listeners.submit({preventDefault(){}})};
+submit('#stockPalletForm',{deliveryNumber:'NEW',palletNumber:'2'});
+const newPallet=api.getState().stockPallets.find(p=>p.deliveryNumber==='NEW');assert.ok(newPallet);
+nodes.get('#stockPartSearch').value='SHARED';
+submit('#stockItemForm',{palletId:newPallet.id,partId:'a',packCode:'11',quantity:'2'});assert.equal(sharedShortage(),0);
+// A new order can replace the old template without copying a stale parts list.
+submit('#orderForm',{name:'Replacement'});
+const replacementId=api.getState().selectedOrderId;
+submit('#orderItemForm',{partId:'a',quantityNeeded:'5',category:'Desk'});
+const templateSelect={dataset:{planProject:'p1',planField:'planningOrderId'},value:replacementId,closest(){return this}};
+nodes.get('#planningProjects').listeners.change({target:templateSelect});
+assert.equal(sharedShortage(),11); // 3*5 + 2*4 - 4 inventory - 8 on pallets
+const replacementItem=api.getState().orders.find(o=>o.id===replacementId).items[0];
+const neededInput={dataset:{itemId:replacementItem.id},value:'6',closest(selector){return selector.includes('edit-needed')?this:null}};
+nodes.get('#orderBoards').listeners.change({target:neededInput});assert.equal(sharedShortage(),14);
+// Even a save without renderAll refreshes the derived table.
+api.getState().parts.find(p=>p.id==='a').quantity+=2;api.saveState();assert.equal(sharedShortage(),12);
+({api,nodes}=boot());assert.equal(sharedShortage(),12);
+console.log('Live dependency tests passed: Inventory, pallet quantity, new pallet and contents, replacement template, per-order quantities, save-only refresh and reload.');

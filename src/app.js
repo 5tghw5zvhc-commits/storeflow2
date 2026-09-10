@@ -710,6 +710,9 @@
   };
 
   function saveState() {
+    // Planning is a live projection of the current ledgers, never a saved snapshot.
+    // Refresh on every save, including actions that only redraw their own view.
+    renderPlanning();
     storageSet(STORAGE_KEY, JSON.stringify(state));
     renderStorageNotice();
   }
@@ -855,7 +858,6 @@
     renderInventory();
     renderOrders();
     renderStock();
-    renderPlanning();
     renderAlertBar();
     renderInventoryNotice();
     renderSettingsTabs();
