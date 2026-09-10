@@ -831,6 +831,103 @@
   Object.assign(ru, featureUpdates.ru);
   Object.assign(pl, featureUpdates.pl);
 
+  Object.assign(en, {
+  "planning.nav": "Planning",
+  "planning.title": "Manufacturing planning",
+  "planning.eyebrow": "REMAINING ORDERS",
+  "planning.remaining": "Orders remaining",
+  "planning.template": "Order template",
+  "planning.choose": "Select an assembly order",
+  "planning.noTemplate": "Select a non-empty order template in this tab. Create an Assembly Order first if needed.",
+  "planning.omitted": "{count} project part(s) are absent from the template. Check the checklist before relying on this estimate.",
+  "planning.missingPart": "A template part is missing from Inventory. Repair the order checklist.",
+  "planning.unresolved": "{count} pallet units are unlinked or unresolved and excluded. Confirm their Master Inventory matches to include them.",
+  "planning.summary": "{orders} orders remaining · {parts} parts to manufacture · {units} units to order",
+  "planning.incomplete": "Incomplete estimate — {orders} orders selected. Resolve the template warnings below/above before ordering.",
+  "planning.part": "Part / pack",
+  "planning.required": "Required",
+  "planning.packed": "Already packed",
+  "planning.inventory": "Inventory",
+  "planning.pallets": "On pallets",
+  "planning.shortage": "To manufacture",
+  "planning.empty": "Enter remaining counts and select each project’s order template.",
+  "planning.updated": "Manufacturing plan updated",
+  "planning.help": "Choose one Assembly Order as the parts-and-quantities template for each project. Counts include that selected order if it is still open: its packed parts count once toward completion. Other open orders are not included or credited; include their remaining work in your counts. Shared stock is counted once across projects. Sending the selected order reduces its count by one and selects the fresh copy.",
+  "planning.list": "Manufacturing requirements"
+});
+  Object.assign(uk, {
+  "planning.nav": "План",
+  "planning.title": "Планування виробництва",
+  "planning.eyebrow": "ЗАЛИШОК ЗАМОВЛЕНЬ",
+  "planning.remaining": "Залишилось замовлень",
+  "planning.template": "Шаблон замовлення",
+  "planning.choose": "Оберіть замовлення на збірку",
+  "planning.noTemplate": "Оберіть непорожній шаблон. За потреби спочатку створіть замовлення на збірку.",
+  "planning.omitted": "Деталей проєкту поза шаблоном: {count}. Перевірте перелік перед використанням розрахунку.",
+  "planning.missingPart": "Деталь шаблону відсутня в інвентарі. Виправте перелік замовлення.",
+  "planning.unresolved": "Непов’язаних або невизначених одиниць на палетах: {count}. Підтвердьте відповідність основному інвентарю, щоб врахувати їх.",
+  "planning.summary": "Залишилось замовлень: {orders} · Деталей до виробництва: {parts} · Одиниць до замовлення: {units}",
+  "planning.incomplete": "Неповний розрахунок — замовлень: {orders}. Усуньте попередження щодо шаблонів перед замовленням.",
+  "planning.part": "Деталь / пакунок",
+  "planning.required": "Потрібно",
+  "planning.packed": "Уже упаковано",
+  "planning.inventory": "Інвентар",
+  "planning.pallets": "На палетах",
+  "planning.shortage": "Виготовити",
+  "planning.empty": "Вкажіть залишок замовлень та оберіть шаблон для кожного проєкту.",
+  "planning.updated": "План виробництва оновлено",
+  "planning.help": "Оберіть замовлення на збірку як шаблон деталей і кількостей для кожного проєкту. Залишок включає вибране замовлення, якщо воно ще відкрите: його упаковані деталі враховуються один раз. Інші відкриті замовлення та їхні упаковані деталі не враховуються; включіть їхню незавершену роботу до кількості. Спільний запас враховується один раз для всіх проєктів. Надсилання вибраного замовлення зменшує залишок на один і вибирає нову копію.",
+  "planning.list": "Потреби виробництва"
+});
+  Object.assign(ru, {
+  "planning.nav": "План",
+  "planning.title": "Планирование производства",
+  "planning.eyebrow": "ОСТАТОК ЗАКАЗОВ",
+  "planning.remaining": "Осталось заказов",
+  "planning.template": "Шаблон заказа",
+  "planning.choose": "Выберите заказ на сборку",
+  "planning.noTemplate": "Выберите непустой шаблон. При необходимости сначала создайте заказ на сборку.",
+  "planning.omitted": "Деталей проекта вне шаблона: {count}. Проверьте список перед использованием расчёта.",
+  "planning.missingPart": "Деталь шаблона отсутствует в инвентаре. Исправьте список заказа.",
+  "planning.unresolved": "Несвязанных или неопределённых единиц на палетах: {count}. Подтвердите соответствие основному инвентарю, чтобы учесть их.",
+  "planning.summary": "Осталось заказов: {orders} · Деталей для производства: {parts} · Единиц для заказа: {units}",
+  "planning.incomplete": "Неполный расчёт — заказов: {orders}. Устраните предупреждения о шаблонах перед заказом.",
+  "planning.part": "Деталь / упаковка",
+  "planning.required": "Требуется",
+  "planning.packed": "Уже упаковано",
+  "planning.inventory": "Инвентарь",
+  "planning.pallets": "На палетах",
+  "planning.shortage": "Изготовить",
+  "planning.empty": "Укажите остаток заказов и выберите шаблон для каждого проекта.",
+  "planning.updated": "План производства обновлён",
+  "planning.help": "Выберите заказ на сборку как шаблон деталей и количеств для каждого проекта. Остаток включает выбранный заказ, если он ещё открыт: его упакованные детали учитываются один раз. Другие открытые заказы и их упакованные детали не учитываются; включите их незавершённую работу в количество. Общий запас учитывается один раз для всех проектов. Отправка выбранного заказа уменьшает остаток на один и выбирает новую копию.",
+  "planning.list": "Потребности производства"
+});
+  Object.assign(pl, {
+  "planning.nav": "Plan",
+  "planning.title": "Planowanie produkcji",
+  "planning.eyebrow": "POZOSTAŁE ZLECENIA",
+  "planning.remaining": "Pozostałe zlecenia",
+  "planning.template": "Szablon zlecenia",
+  "planning.choose": "Wybierz zlecenie montażu",
+  "planning.noTemplate": "Wybierz niepusty szablon. W razie potrzeby najpierw utwórz zlecenie montażu.",
+  "planning.omitted": "Liczba części projektu poza szablonem: {count}. Sprawdź listę przed użyciem obliczeń.",
+  "planning.missingPart": "Części szablonu brakuje w inwentarzu. Popraw listę zlecenia.",
+  "planning.unresolved": "Niepowiązane lub nierozstrzygnięte jednostki na paletach: {count}. Potwierdź powiązania z inwentarzem, aby je uwzględnić.",
+  "planning.summary": "Pozostałe zlecenia: {orders} · Części do produkcji: {parts} · Jednostki do zamówienia: {units}",
+  "planning.incomplete": "Niepełne obliczenia — zlecenia: {orders}. Rozwiąż ostrzeżenia dotyczące szablonów przed zamówieniem.",
+  "planning.part": "Część / pakiet",
+  "planning.required": "Potrzebne",
+  "planning.packed": "Już spakowane",
+  "planning.inventory": "Inwentarz",
+  "planning.pallets": "Na paletach",
+  "planning.shortage": "Do produkcji",
+  "planning.empty": "Wpisz pozostałe ilości i wybierz szablon zlecenia dla każdego projektu.",
+  "planning.updated": "Plan produkcji zaktualizowany",
+  "planning.help": "Wybierz zlecenie montażu jako szablon części i ilości dla każdego projektu. Liczba obejmuje wybrane zlecenie, jeśli jest nadal otwarte: jego spakowane części liczą się raz. Inne otwarte zlecenia i ich spakowane części nie są uwzględniane; dolicz ich pozostałą pracę do liczby zleceń. Wspólny zapas liczy się raz dla wszystkich projektów. Wysłanie wybranego zlecenia zmniejsza liczbę o jeden i wybiera nową kopię.",
+  "planning.list": "Zapotrzebowanie produkcyjne"
+});
+
   const translations = { en, uk, ru, pl };
 
   function t(language, key, params = {}) {

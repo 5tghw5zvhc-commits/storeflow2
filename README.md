@@ -97,3 +97,11 @@ Use **Data & settings → Export backup** regularly. Project photos are stored i
 ## Keeping translations current
 
 All interface copy belongs in `src/i18n.js`; UI code and markup reference catalogue keys instead of embedding messages. Every new English key must be translated into Ukrainian, Russian and Polish with the same placeholders. `npm run validate` checks exact key parity, non-empty values, placeholder parity, and every catalogue key referenced by the HTML and JavaScript, so an incomplete language update cannot pass validation.
+
+## Manufacturing planning
+
+The Planning tab stores a remaining order count and an explicit Assembly Order template per project. Build a complete checklist with the quantities needed for one order, then select it in Planning. Demand is aggregated by master-part ID across projects before subtracting Inventory and linked store-pallet quantities once. Different pack identities remain separate. Unresolved pallet lines are reported and excluded until linked. Missing templates and project parts omitted from the template produce an incomplete-estimate warning.
+
+Counts include the selected open order. Its already-packed quantities are credited once because they have already been deducted from Inventory. Other open orders are not credited: the user must include their remaining work in the entered counts. Sending the selected order decrements the count and follows its fresh copy. Planning changes and sending remain undoable, and counts/template choices survive backup import and reload. Sent historical templates receive no packed credit.
+
+Verification: `node scripts/test-planning.mjs` exercises the production calculator, rendered markup, input handler, persistence, undo and Send Order in a DOM stub. This is a runtime test, not a visual browser test.

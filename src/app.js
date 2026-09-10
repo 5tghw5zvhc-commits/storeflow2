@@ -386,6 +386,8 @@
       name: String(project.name || 'Untitled project'),
       location: String(project.location || ''),
       reference: String(project.reference || ''),
+      remainingOrders: Math.max(0, Math.floor(Number(project.remainingOrders) || 0)),
+      planningOrderId: String(project.planningOrderId || ''),
       photo: String(project.photo || project.photoDataUrl || ''),
       createdAt: project.createdAt || new Date().toISOString()
     })) : [];
@@ -702,6 +704,7 @@
   };
 
   const viewMeta = {
+    planning: ['planning.title', 'planning.eyebrow'],
     dashboard: ['view.dashboard.title', 'view.dashboard.eyebrow'], projects: ['view.projects.title', 'view.projects.eyebrow'], inventory: ['view.inventory.title', 'view.inventory.eyebrow'],
     orders: ['view.orders.title', 'view.orders.eyebrow'], stock: ['view.stock.title', 'view.stock.eyebrow'], settings: ['view.settings.title', 'view.settings.eyebrow']
   };
@@ -833,6 +836,7 @@
     if (view === 'inventory') renderInventory();
     if (view === 'orders') renderOrders();
     if (view === 'stock') renderStock();
+    if (view === 'planning') renderPlanning();
   }
 
   function ensureValidSelections() {
@@ -851,6 +855,7 @@
     renderInventory();
     renderOrders();
     renderStock();
+    renderPlanning();
     renderAlertBar();
     renderInventoryNotice();
     renderSettingsTabs();
@@ -1863,6 +1868,11 @@
         packed: false
       }))
     };
+    const planningProject = state.projects.find(project => project.id === order.projectId);
+    if (planningProject?.planningOrderId === order.id) {
+      planningProject.remainingOrders = Math.max(0, (planningProject.remainingOrders || 0) - 1);
+      planningProject.planningOrderId = nextOrder.id;
+    }
     order.sentAt = now;
     state.orders.push(nextOrder);
     state.selectedOrderId = nextOrder.id;
@@ -2037,6 +2047,74 @@
     addActivity('activity.checklistRemoved', part ? `${part.code} · ${order.name}` : order.name);
     renderAll();
   }
+
+
+  // Aggregate by master ID, never by display name or pack text.
+  function calculateManufacturingPlan(source) {
+    const rows = new Map();
+    const issues = [];
+    let orders = 0;
+    for (const project of source.projects) {
+      const count = Math.max(0, Math.floor(Number(project.remainingOrders) || 0));
+      orders += count;
+      if (!count) continue;
+      const template = source.orders.find(order => order.id === project.planningOrderId && order.projectId === project.id);
+      if (!template?.items.length) { issues.push({ project, key: 'planning.noTemplate' }); continue; }
+      const omitted = source.parts.filter(part => part.projectIds?.includes(project.id) && !template.items.some(item => item.partId === part.id));
+      if (omitted.length) issues.push({ project, key: 'planning.omitted', count: omitted.length });
+      for (const item of template.items) {
+        const part = source.parts.find(part => part.id === item.partId);
+        if (!part) { issues.push({ project, key: 'planning.missingPart' }); continue; }
+        const row = rows.get(part.id) || { part, required: 0, packed: 0, inventory: Math.max(0, Number(part.quantity) || 0), pallets: 0, projects: [] };
+        row.required += item.quantityNeeded * count;
+        if (!template.sentAt && item.packed) row.packed += item.quantityNeeded;
+        if (!row.projects.includes(project.name)) row.projects.push(project.name);
+        rows.set(part.id, row);
+      }
+    }
+    let unresolved = 0;
+    for (const pallet of source.stockPallets) {
+      for (const item of pallet.items) {
+        if (!source.parts.some(part => part.id === item.partId)) { unresolved += Math.max(0, Number(item.quantity) || 0); continue; }
+        const row = rows.get(item.partId);
+        if (row) row.pallets += Math.max(0, Number(item.quantity) || 0);
+      }
+    }
+    for (const row of rows.values()) row.shortage = Math.max(0, row.required - row.packed - row.inventory - row.pallets);
+    return { rows: [...rows.values()].sort((a, b) => b.shortage - a.shortage || a.part.code.localeCompare(b.part.code)), issues, unresolved, orders };
+  }
+
+  function renderPlanning() {
+    const plan = calculateManufacturingPlan(state);
+    $('#planningProjects').innerHTML = state.projects.map(project => {
+      const templates = state.orders.filter(order => order.projectId === project.id);
+      return `<article class="panel planning-project"><strong>${esc(project.name)}</strong>
+        <label>${esc(t('planning.remaining'))}<input type="number" min="0" max="1000000" step="1" inputmode="numeric" data-plan-project="${esc(project.id)}" data-plan-field="remainingOrders" value="${project.remainingOrders || 0}"></label>
+        <label>${esc(t('planning.template'))}<select data-plan-project="${esc(project.id)}" data-plan-field="planningOrderId"><option value="">${esc(t('planning.choose'))}</option>${templates.map(order => `<option value="${esc(order.id)}" ${project.planningOrderId === order.id ? 'selected' : ''}>${esc(order.name)}${order.sentAt ? ` · ${esc(t('orders.sentStatus'))}` : ''}</option>`).join('')}</select></label></article>`;
+    }).join('') || `<div class="empty-state">${esc(t('projects.none'))}</div>`;
+    $('#planningWarnings').innerHTML = plan.issues.map(issue => `<p>${esc(issue.project.name)}: ${esc(t(issue.key, { count: issue.count }))}</p>`).join('') + (plan.unresolved ? `<p>${esc(t('planning.unresolved', { count: plan.unresolved }))}</p>` : '');
+    $('#planningWarnings').classList.toggle('hidden', !plan.issues.length && !plan.unresolved);
+    $('#planningSummary').textContent = t(plan.issues.length ? 'planning.incomplete' : 'planning.summary', { orders: plan.orders, parts: plan.rows.filter(row => row.shortage > 0).length, units: plan.rows.reduce((sum, row) => sum + row.shortage, 0) });
+    $('#planningResults').innerHTML = plan.rows.length ? `<div class="planning-table-scroll"><table><thead><tr>${['planning.part', 'planning.required', 'planning.packed', 'planning.inventory', 'planning.pallets', 'planning.shortage'].map(key => `<th scope="col">${esc(t(key))}</th>`).join('')}</tr></thead><tbody>${plan.rows.map(row => `<tr class="${row.shortage ? 'planning-short' : ''}"><td>${partIdentityMarkup(row.part)}<small>${esc(assemblyLabel(row.part))} · ${esc(dimensionLabel(row.part))}</small><small>${esc(row.projects.join(', '))}</small></td><td>${row.required}</td><td>${row.packed}</td><td>${row.inventory}</td><td>${row.pallets}</td><td><strong>${row.shortage}</strong></td></tr>`).join('')}</tbody></table></div>` : `<p class="empty-state">${esc(t('planning.empty'))}</p>`;
+  }
+
+  $('#planningProjects').addEventListener('change', event => {
+    const input = event.target.closest('[data-plan-project]');
+    if (!input) return;
+    const project = state.projects.find(project => project.id === input.dataset.planProject);
+    if (!project) return;
+    const field = input.dataset.planField;
+    if (field === 'remainingOrders') {
+      const value = Number(input.value);
+      if (!Number.isSafeInteger(value) || value < 0 || value > 1000000) { input.value = project.remainingOrders || 0; return; }
+      project.remainingOrders = value;
+    } else if (field === 'planningOrderId') {
+      if (input.value && !state.orders.some(order => order.id === input.value && order.projectId === project.id)) return;
+      project.planningOrderId = input.value;
+    } else return;
+    addActivity('planning.updated', project.name);
+    renderAll();
+  });
 
   els.menuBtn.addEventListener('click', () => els.sidebar.classList.toggle('open'));
   els.undoLatestBtn.addEventListener('click', undoLatestChange);

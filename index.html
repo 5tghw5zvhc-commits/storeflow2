@@ -20,6 +20,7 @@
 <symbol id="icon-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4zM4 7v10l8 4 8-4V7M12 11v10"/></symbol>
 <symbol id="icon-orders" viewBox="0 0 24 24"><path d="M6 3h9l3 3v7M6 3v18h8"/><path d="M15 3v4h4M12 16l6-6 2 2-6 6-3 1z"/></symbol>
 <symbol id="icon-stock" viewBox="0 0 24 24"><path d="M3 19h18M5 19v-5h14v5M7 14V9h4v5M13 14V9h4v5M5 9V4h6v5M13 9V4h6v5"/></symbol>
+<symbol id="icon-planning" viewBox="0 0 24 24"><path d="M8 3h8v4H8zM8 5H5v16h14V5h-3M8 11h8M8 15h3M8 18h3M14 16l2 2 4-5"/></symbol>
 <symbol id="icon-data" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/><circle cx="12" cy="12" r="7"/></symbol>
 </svg>
 <div class="app-shell" id="appView">
@@ -35,6 +36,7 @@
 <button class="nav-item" data-view="inventory"><svg class="nav-icon"><use href="#icon-box"/></svg><span data-i18n="nav.inventory">Inventory</span></button>
 <button class="nav-item" data-view="orders"><svg class="nav-icon"><use href="#icon-orders"/></svg><span data-i18n="nav.orders">Assembly orders</span></button>
 <button class="nav-item" data-view="stock"><svg class="nav-icon"><use href="#icon-stock"/></svg><span data-i18n="nav.stock">Stock pallets</span></button>
+<button class="nav-item" data-view="planning"><svg class="nav-icon"><use href="#icon-planning"/></svg><span data-i18n="planning.nav">Planning</span></button>
 <button class="nav-item" data-view="settings"><svg class="nav-icon"><use href="#icon-data"/></svg><span data-i18n="nav.settings">Data &amp; settings</span></button>
 </nav>
 </div>
@@ -117,6 +119,12 @@
 <div class="order-grid" id="orderBoards"></div>
 <div class="order-send-bar hidden" id="orderSendBar"><div><strong data-i18n="orders.sendTitle">Send this completed order</strong><span data-i18n="orders.sendHelp">Checked quantities stay deducted. StoreFlow then opens a fresh copy with the same parts and every box unchecked.</span></div><button class="primary" data-i18n="orders.send" id="sendOrderBtn" type="button">Send the order</button></div>
 </section>
+<section class="view" id="planningView">
+<p class="planning-help" data-i18n="planning.help"></p>
+<div id="planningProjects" class="planning-projects"></div>
+<div id="planningWarnings" class="planning-warning hidden" role="status"></div>
+<article class="panel"><h3 data-i18n="planning.list">Manufacturing requirements</h3><p id="planningSummary" role="status" aria-live="polite"></p><div id="planningResults"></div></article>
+</section>
 <section class="view" id="stockView">
 <div class="order-summary stock-summary" id="stockSummary"></div>
 <section aria-label="Pallet planner" class="stock-planner" data-i18n-aria="stock.planner.aria">
@@ -163,6 +171,7 @@
 <button class="nav-item" data-view="inventory" type="button"><svg class="nav-icon"><use href="#icon-box"/></svg><small data-i18n="nav.inventory">Inventory</small></button>
 <button class="nav-item" data-view="orders" type="button"><svg class="nav-icon"><use href="#icon-orders"/></svg><small data-i18n="nav.ordersShort">Orders</small></button>
 <button class="nav-item" data-view="stock" type="button"><svg class="nav-icon"><use href="#icon-stock"/></svg><small data-i18n="nav.stockShort">Stock</small></button>
+<button class="nav-item" data-view="planning" type="button"><svg class="nav-icon"><use href="#icon-planning"/></svg><small data-i18n="planning.nav">Planning</small></button>
 <button class="nav-item" data-view="settings" type="button"><svg class="nav-icon"><use href="#icon-data"/></svg><small data-i18n="nav.data">Data</small></button>
 </nav>
 </div>
