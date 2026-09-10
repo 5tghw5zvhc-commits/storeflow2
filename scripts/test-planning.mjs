@@ -16,6 +16,26 @@ let {api,nodes}=boot();
 let plan=api.calculateManufacturingPlan(api.getState());
 assert.equal(plan.rows[0].required,14);assert.equal(plan.rows[0].packed,2);assert.equal(plan.rows[0].shortage,5);assert.equal(plan.rows[1].shortage,2);assert.equal(plan.unresolved,100);assert.equal(plan.issues.length,0);
 assert.match(nodes.get('#planningResults').innerHTML,/Shared board/);
+// Column order and actual order-edit handlers must refresh the planning markup.
+assert.match(nodes.get('#planningResults').innerHTML, /<th scope="col">Part \/ pack<\/th><th scope="col">To manufacture<\/th>/);
+assert.match(nodes.get('#planningResults').innerHTML, /<td><strong>5<\/strong><\/td><td>2<\/td><td>3<\/td><td>4<\/td><td>14<\/td>/);
+api.getState().activeProjectId='p2';api.getState().selectedOrderId='o2';api.renderAll();
+const quantityInput={dataset:{itemId:'i2'},value:'7',closest(selector){return selector.includes('edit-needed')?this:null}};
+nodes.get('#orderBoards').listeners.change({target:quantityInput});
+assert.equal(api.calculateManufacturingPlan(api.getState()).rows[0].required,20);
+assert.match(nodes.get('#planningResults').innerHTML, /<td><strong>11<\/strong><\/td><td>2<\/td><td>3<\/td><td>4<\/td><td>20<\/td>/);
+({api,nodes}=boot());assert.equal(api.calculateManufacturingPlan(api.getState()).rows[0].required,20);
+api.undoLatestChange();assert.equal(api.calculateManufacturingPlan(api.getState()).rows[0].required,14);
+const removeButton={dataset:{action:'remove-order-item',itemId:'i3'},closest(){return this}};
+nodes.get('#orderBoards').listeners.click({target:removeButton});
+assert.equal(api.calculateManufacturingPlan(api.getState()).rows.length,1);
+assert.match(nodes.get('#planningWarnings').innerHTML,/absent from the template/);
+api.undoLatestChange();assert.equal(api.calculateManufacturingPlan(api.getState()).rows.length,2);
+api.getState().activeProjectId='p1';api.getState().selectedOrderId='o1';api.renderAll();
+quantityInput.dataset.itemId='i1';quantityInput.value='3';
+nodes.get('#orderBoards').listeners.change({target:quantityInput});
+assert.match(nodes.get('#planningResults').innerHTML, /<td><strong>8<\/strong><\/td><td>3<\/td><td>2<\/td><td>4<\/td><td>17<\/td>/);
+api.undoLatestChange();assert.equal(api.calculateManufacturingPlan(api.getState()).rows[0].shortage,5);
 // Actual change handler, then persisted reload and undo.
 const input={dataset:{planProject:'p1',planField:'remainingOrders'},value:'4',closest(){return this}};
 nodes.get('#planningProjects').listeners.change({target:input});assert.equal(api.getState().projects[0].remainingOrders,4);
