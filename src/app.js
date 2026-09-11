@@ -1376,6 +1376,7 @@
       ${recommendationLabel}
       <div class="stock-pallet-meta"><span>${esc(t('common.partLines', { count: pallet.items.length }))}</span><span>${esc(t('common.units', { count: units }))}</span>${overflowItems.length ? `<span class="overflow-text">${esc(t('stock.overflowingCount', { count: overflowItems.length }))}</span>` : ''}</div>
       ${expandedContent}
+      <button class="secondary stock-unload-button" data-stock-action="unload" data-pallet-id="${esc(pallet.id)}" type="button">${esc(t('stock.unload'))}</button>
     </article>`;
   }
 
@@ -1963,6 +1964,33 @@
     renderAll();
     if (els.stockPalletDetailDialog.hasAttribute('open') && openStockPalletId === pallet.id) renderStockPalletDetail();
     showToast(t('message.storedPartRemoved'));
+  }
+
+  function unloadStockPallet(palletId) {
+    const pallet = getStockPallet(palletId);
+    if (!pallet) return;
+    if (!pallet.items.length) return showToast(t('stock.unloadEmpty'));
+    const additions = new Map();
+    for (const item of pallet.items) {
+      const part = state.parts.find(part => part.id === item.partId);
+      if (!part || (item.packCode && !partMatchesPack(part, item.packCode))) return showToast(t('stock.unloadUnlinked'));
+      const quantity = Number(item.quantity);
+      if (!Number.isSafeInteger(quantity) || quantity <= 0) return showToast(t('stock.unloadInvalid'));
+      additions.set(part.id, (additions.get(part.id) || 0) + quantity);
+      if (!Number.isSafeInteger(part.quantity + additions.get(part.id))) return showToast(t('stock.unloadInvalid'));
+    }
+    if (!window.confirm(t('stock.unloadConfirm', { delivery: pallet.deliveryNumber, pallet: pallet.palletNumber, units: [...additions.values()].reduce((sum, value) => sum + value, 0) }))) return;
+    const before = cloneData(state);
+    additions.forEach((quantity, partId) => { state.parts.find(part => part.id === partId).quantity += quantity; });
+    state.stockPallets = state.stockPallets.filter(candidate => candidate.id !== palletId);
+    // Save both sides of the transfer together; never leave a half-completed receipt.
+    if (!storageSet(STORAGE_KEY, JSON.stringify(state))) { state = before; showToast(t('stock.unloadSaveFailed')); return; }
+    addActivity('stock.unloadedActivity', `${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+    expandedStockPalletIds.delete(palletId);
+    if (openStockPalletMenuId === palletId) openStockPalletMenuId = null;
+    if (openStockPalletId === palletId) { openStockPalletId = null; closeDialog(els.stockPalletDetailDialog); }
+    renderAll();
+    showToast(t('stock.unloaded'));
   }
 
   function deleteStockPallet(palletId) {
@@ -2589,6 +2617,7 @@
       renderStock();
       if (pallet) openStockPalletDialog(pallet);
     }
+    if (control.dataset.stockAction === 'unload') unloadStockPallet(palletId);
     if (control.dataset.stockAction === 'delete') {
       openStockPalletMenuId = null;
       renderStock();

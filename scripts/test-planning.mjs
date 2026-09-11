@@ -103,3 +103,21 @@ const exported=JSON.stringify(api.getState());assert.equal(api.migrateState(JSON
 rejectStateWrites=true;nodes.get('#zeroInventoryBtn').listeners.click();rejectStateWrites=false;
 assert.equal(JSON.stringify(api.getState()),exported);assert.equal(saved.get('storeflow-state-v1'),exported);
 console.log('Stocktake tests passed: zero all Inventory, untouched pallets/orders, planning refresh, restore after 25 changes/reload, repeat-restore protection, multiple resets, undo restore, backup migration and storage-failure rollback.');
+
+// Unload is a transfer; Delete is a discard. Exercise the actual card actions.
+saved.clear();saved.set('storeflow-state-v1',JSON.stringify(data));({api,nodes}=boot());
+const unloadButton={dataset:{stockAction:'unload',palletId:'s1'},closest(){return this}};
+const unload=()=>nodes.get('#stockPalletGrid').listeners.click({target:unloadButton});
+const initial=JSON.stringify(api.getState());unload();assert.equal(JSON.stringify(api.getState()),initial); // unresolved line blocks entire pallet
+api.getState().stockPallets[0].items.pop();
+api.getState().stockPallets[0].items.push({id:'second',partId:'b',packCode:'12',quantity:2});api.renderAll();
+assert.match(nodes.get('#stockPalletGrid').innerHTML,/data-stock-action="unload"/);
+const beforeShort=api.calculateManufacturingPlan(api.getState()).rows.reduce((sum,r)=>sum+r.shortage,0);
+const beforeUnload=JSON.stringify(api.getState());rejectStateWrites=true;unload();rejectStateWrites=false;assert.equal(JSON.stringify(api.getState()),beforeUnload);
+unload();assert.equal(api.getState().parts[0].quantity,7);assert.equal(api.getState().parts[1].quantity,2);assert.equal(api.getState().stockPallets.length,0);
+assert.equal(api.calculateManufacturingPlan(api.getState()).rows.reduce((sum,r)=>sum+r.shortage,0),beforeShort);
+unload();assert.equal(api.getState().parts[0].quantity,7); // cannot unload twice
+({api,nodes}=boot());api.undoLatestChange();assert.equal(api.getState().parts[0].quantity,3);assert.equal(api.getState().parts[1].quantity,0);assert.equal(api.getState().stockPallets[0].items.length,2);
+const deleteButton={dataset:{stockAction:'delete',palletId:'s1'},closest(){return this}};
+nodes.get('#stockPalletGrid').listeners.click({target:deleteButton});assert.equal(api.getState().parts[0].quantity,3);assert.equal(api.getState().stockPallets.length,0);
+console.log('Unload tests passed: multi-part receipt, unresolved blocking, atomic save rollback, conservation of available stock, duplicate prevention, reload/Undo and separate discard behavior.');
