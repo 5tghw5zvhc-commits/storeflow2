@@ -63,7 +63,7 @@ storeflow/
 
 ## Local data and future collaboration
 
-Version 1 stores data in the browser on each device using `localStorage`. This keeps the app fast and usable offline, but data is not yet shared between colleagues.
+StoreFlow stores data in the browser on each device using IndexedDB. Legacy localStorage data is copied and verified on first launch without modifying the old copy. The app remains usable offline; data is not shared between colleagues.
 
 The data model already separates master parts, project links and orders. A future cloud adapter can replace local storage with Supabase or another database without changing the core inventory model.
 
@@ -99,6 +99,18 @@ Use **Data & settings → Export backup** regularly. Project photos are stored i
 All interface copy belongs in `src/i18n.js`; UI code and markup reference catalogue keys instead of embedding messages. Every new English key must be translated into Ukrainian, Russian and Polish with the same placeholders. `npm run validate` checks exact key parity, non-empty values, placeholder parity, and every catalogue key referenced by the HTML and JavaScript, so an incomplete language update cannot pass validation.
 
 ## Manufacturing planning
+
+## Device database upgrade
+
+StoreFlow now saves operational state and the ordinary Undo history together in IndexedDB (`storeflow-device-v1`). The first launch copies the exact legacy JSON and Undo text, verifies them inside the transaction and again after commit, and only then initializes the app. It never deletes or overwrites the old localStorage records; an additional original migration copy is retained in the database. Photos stay byte-for-byte unchanged during this upgrade. No cloud account or server storage is involved.
+
+Writes are serialized, read-back checked, and use strict transaction durability where supported. Revision checks reject stale saves from another window. Initialization errors fail closed rather than saving an empty replacement. Data management reports saving/saved/failure status and offers retry. Import success is shown only after the database transaction commits; failed imports restore the previous in-memory workspace and Undo history. Stocktake reset/restore and pallet unload use the same atomic persistence path. JSON backup compatibility is unchanged; ordinary Undo remains device-local and is migrated directly, while stocktake restore records remain part of exported backups.
+
+Keep independent exported backups: device-local databases can still be lost if website data is cleared, the app is removed, or the device fails. The retained legacy copy is a migration-time fallback, not a live replica. Changes that failed to save in the old app can only be recovered from an exported backup made while they were visible. Database tests use `fake-indexeddb`, and app interaction regressions use a DOM stub; these do not constitute a test on the user's iPhone.
+
+Verification: `npm ci --ignore-scripts`, `npm run validate`, `node scripts/test-storage.mjs`, and `node scripts/test-planning.mjs`.
+
+### Planning behavior
 
 The Planning tab stores a remaining order count and an explicit Assembly Order template per project. Build a complete checklist with the quantities needed for one order, then select it in Planning. Demand is aggregated by master-part ID across projects before subtracting Inventory and linked store-pallet quantities once. Different pack identities remain separate. Unresolved pallet lines are reported and excluded until linked. Missing templates and project parts omitted from the template produce an incomplete-estimate warning.
 

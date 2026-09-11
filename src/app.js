@@ -1,4 +1,4 @@
-(() => {
+(async () => {
   'use strict';
 
   const STORAGE_KEY = 'storeflow-state-v1';
@@ -6,11 +6,27 @@
   const UNDO_COLLECTION_KEYS = ['projects', 'parts', 'orders', 'stockPallets', 'activity'];
   const UNDO_SCALAR_KEYS = ['language', 'activeProjectId', 'selectedOrderId', 'dismissedNotices', 'stocktakeResets'];
   const MAX_UNDO_HISTORY = 20;
-  const MAX_PERSISTED_UNDO_BYTES = 1500000;
   const I18N = window.StoreFlowI18n;
+  const database = window.StoreFlowStorage.create();
+  let initialData;
+  try {
+    initialData = await database.init();
+    if (initialData.state !== null) window.StoreFlowStorage.validateState(initialData.state);
+  } catch (error) {
+    console.error('StoreFlow storage initialization failed:', error);
+    const status = document.querySelector('#storageStartupStatus');
+    status.textContent = I18N.t('en', 'storage.startFailed', { error: error.name || 'Error' });
+    document.querySelector('#storageStartupRetry').hidden = false;
+    document.querySelector('#storageStartupRetry').onclick = () => location.reload();
+    return;
+  }
   const LANGUAGE_CODES = new Set(I18N.languages.map(language => language.code));
   const CATEGORIES = ['Desk', 'Bed', 'Wardrobe', 'Kitchen', 'Infills', 'Other'];
   let storageAvailable = true;
+  let storageStatus = 'storage.saved';
+  let storageError = '';
+  let saveSequence = 0;
+  let pendingSaves = 0;
   let currentView = 'dashboard';
   let toastTimer;
   let projectPhotoDraft = '';
@@ -45,24 +61,7 @@
   }
 
   function storageGet(key) {
-    try {
-      return window.localStorage.getItem(key);
-    } catch (error) {
-      storageAvailable = false;
-      return null;
-    }
-  }
-
-  function storageSet(key, value) {
-    try {
-      window.localStorage.setItem(key, value);
-      storageAvailable = true;
-      return true;
-    } catch (error) {
-      storageAvailable = false;
-      console.warn('StoreFlow could not save to local storage:', error);
-      return false;
-    }
+    return key === STORAGE_KEY ? initialData.state : initialData.undo;
   }
 
   function openDialog(dialog) {
@@ -526,7 +525,7 @@
       return migrateState(JSON.parse(raw));
     } catch (error) {
       console.error('Could not load StoreFlow data:', error);
-      return createInitialState();
+      throw error;
     }
   }
 
@@ -575,7 +574,7 @@
 
   function loadUndoHistory() {
     try {
-      const parsed = JSON.parse(window.localStorage.getItem(UNDO_STORAGE_KEY) || '[]');
+      const parsed = JSON.parse(storageGet(UNDO_STORAGE_KEY) || '[]');
       return Array.isArray(parsed)
         ? parsed.filter(entry => entry && entry.changes && typeof entry.changes === 'object').slice(0, MAX_UNDO_HISTORY)
         : [];
@@ -587,21 +586,7 @@
 
   function persistUndoHistory() {
     undoHistory = undoHistory.slice(0, MAX_UNDO_HISTORY);
-    let persisted = [...undoHistory];
-    while (persisted.length && JSON.stringify(persisted).length > MAX_PERSISTED_UNDO_BYTES) persisted.pop();
-    while (true) {
-      try {
-        if (persisted.length) window.localStorage.setItem(UNDO_STORAGE_KEY, JSON.stringify(persisted));
-        else window.localStorage.removeItem(UNDO_STORAGE_KEY);
-        return;
-      } catch (error) {
-        if (!persisted.length) {
-          console.warn('StoreFlow could not persist undo history:', error);
-          return;
-        }
-        persisted.pop();
-      }
-    }
+    // The next save commits Undo and operational data in one database transaction.
   }
 
   function commitPendingUndo() {
@@ -718,12 +703,29 @@
     // Planning is a live projection of the current ledgers, never a saved snapshot.
     // Refresh on every save, including actions that only redraw their own view.
     renderPlanning();
-    storageSet(STORAGE_KEY, JSON.stringify(state));
+    const sequence = ++saveSequence;
+    pendingSaves++;
+    storageStatus = 'storage.saving';
     renderStorageNotice();
+    return database.save(JSON.stringify(state), JSON.stringify(undoHistory)).then(() => {
+      if (sequence === saveSequence) { storageAvailable = true; storageStatus = 'storage.saved'; storageError = ''; }
+      return true;
+    }).catch(error => {
+      console.error('StoreFlow database save failed:', error);
+      if (sequence === saveSequence) {
+        storageAvailable = false;
+        storageError = error.name || 'Error';
+        storageStatus = error.name === 'QuotaExceededError' ? 'storage.full' : error.name === 'ConflictError' ? 'storage.conflict' : 'storage.failed';
+      }
+      return false;
+    }).finally(() => { pendingSaves--; renderStorageNotice(); });
   }
 
   function renderStorageNotice() {
-    els.storageNotice?.classList.toggle('hidden', storageAvailable);
+    els.storageNotice?.classList.toggle('hidden', storageAvailable && storageStatus !== 'storage.saving');
+    if (els.storageNotice) els.storageNotice.textContent = t(storageStatus, { error: storageError });
+    const status = $('#databaseSaveStatus');
+    if (status) status.textContent = t(storageStatus, { error: storageError });
   }
 
   function addActivity(textKey, detail = '') {
@@ -853,7 +855,7 @@
     if (!activeOrders.some(order => order.id === state.selectedOrderId)) state.selectedOrderId = activeOrders[0]?.id || null;
   }
 
-  function renderAll() {
+  function renderAll(persist = true) {
     ensureValidSelections();
     commitPendingUndo();
     applyTranslations();
@@ -866,8 +868,35 @@
     renderAlertBar();
     renderInventoryNotice();
     renderSettingsTabs();
-    saveState();
+    const saving = persist ? saveState() : Promise.resolve(false);
+    if (!persist) renderPlanning();
     syncUndoBaseline();
+    return saving;
+  }
+
+  async function commitCritical(before, actionKey, detail = '') {
+    const previousUndo = cloneData(undoHistory);
+    const app = $('#appView');
+    app.inert = true;
+    // Dialogs sit outside appView: block them for the duration of the transaction too.
+    const dialogs = $$('dialog');
+    dialogs.forEach(dialog => { dialog.inert = true; });
+    try {
+      addActivity(actionKey, detail);
+      const saved = await renderAll();
+      if (!saved) {
+        state = before;
+        undoHistory = previousUndo;
+        pendingUndoActivities = [];
+        undoBaseline = captureUndoState(state);
+        renderAll(false);
+        renderStorageNotice();
+      }
+      return saved;
+    } finally {
+      app.inert = false;
+      dialogs.forEach(dialog => { dialog.inert = false; });
+    }
   }
 
   function renderProjectSelectors() {
@@ -1966,7 +1995,7 @@
     showToast(t('message.storedPartRemoved'));
   }
 
-  function unloadStockPallet(palletId) {
+  async function unloadStockPallet(palletId) {
     const pallet = getStockPallet(palletId);
     if (!pallet) return;
     if (!pallet.items.length) return showToast(t('stock.unloadEmpty'));
@@ -1984,12 +2013,11 @@
     additions.forEach((quantity, partId) => { state.parts.find(part => part.id === partId).quantity += quantity; });
     state.stockPallets = state.stockPallets.filter(candidate => candidate.id !== palletId);
     // Save both sides of the transfer together; never leave a half-completed receipt.
-    if (!storageSet(STORAGE_KEY, JSON.stringify(state))) { state = before; showToast(t('stock.unloadSaveFailed')); return; }
-    addActivity('stock.unloadedActivity', `${pallet.deliveryNumber} / ${pallet.palletNumber}`);
+    if (!await commitCritical(before, 'stock.unloadedActivity', `${pallet.deliveryNumber} / ${pallet.palletNumber}`)) { showToast(t('stock.unloadSaveFailed')); return; }
     expandedStockPalletIds.delete(palletId);
     if (openStockPalletMenuId === palletId) openStockPalletMenuId = null;
     if (openStockPalletId === palletId) { openStockPalletId = null; closeDialog(els.stockPalletDetailDialog); }
-    renderAll();
+    renderAll(false);
     showToast(t('stock.unloaded'));
   }
 
@@ -2153,7 +2181,7 @@
     renderAll();
   });
 
-  function resetInventoryForStocktake() {
+  async function resetInventoryForStocktake() {
     const quantities = state.parts.filter(part => part.quantity > 0).map(part => ({ partId: part.id, quantity: part.quantity }));
     if (!quantities.length || !window.confirm(t('stocktake.confirm'))) return;
     const before = cloneData(state);
@@ -2161,12 +2189,10 @@
     state.stocktakeResets.push({ id: uid('stocktake'), createdAt: new Date().toISOString(), restoredAt: '', quantities });
     state.parts.forEach(part => { part.quantity = 0; });
     // Commit quantities and the durable inverse together before accepting the reset.
-    if (!storageSet(STORAGE_KEY, JSON.stringify(state))) { state = before; showToast(t('stocktake.saveFailed')); return; }
-    addActivity('stocktake.resetActivity');
-    renderAll();
+    if (!await commitCritical(before, 'stocktake.resetActivity')) showToast(t('stocktake.saveFailed'));
   }
 
-  function restoreStocktakeReset(id) {
+  async function restoreStocktakeReset(id) {
     const reset = (state.stocktakeResets || []).find(reset => reset.id === id && !reset.restoredAt);
     if (!reset || !window.confirm(t('stocktake.restoreConfirm'))) return;
     const before = cloneData(state);
@@ -2175,15 +2201,13 @@
       if (part) part.quantity += entry.quantity;
     });
     reset.restoredAt = new Date().toISOString();
-    if (!storageSet(STORAGE_KEY, JSON.stringify(state))) { state = before; showToast(t('stocktake.saveFailed')); return; }
-    addActivity('stocktake.restoreActivity');
-    renderAll();
+    if (!await commitCritical(before, 'stocktake.restoreActivity')) showToast(t('stocktake.saveFailed'));
   }
 
   $('#zeroInventoryBtn').addEventListener('click', resetInventoryForStocktake);
   $('#stocktakeRestores').addEventListener('click', event => {
     const button = event.target.closest('[data-restore-stocktake]');
-    if (button) restoreStocktakeReset(button.dataset.restoreStocktake);
+    if (button) return restoreStocktakeReset(button.dataset.restoreStocktake);
   });
 
   els.menuBtn.addEventListener('click', () => els.sidebar.classList.toggle('open'));
@@ -2617,7 +2641,7 @@
       renderStock();
       if (pallet) openStockPalletDialog(pallet);
     }
-    if (control.dataset.stockAction === 'unload') unloadStockPallet(palletId);
+    if (control.dataset.stockAction === 'unload') return unloadStockPallet(palletId);
     if (control.dataset.stockAction === 'delete') {
       openStockPalletMenuId = null;
       renderStock();
@@ -2821,13 +2845,14 @@
     const file = els.importInput.files?.[0];
     if (!file) return;
     try {
-      const imported = migrateState(JSON.parse(await file.text()));
+      const raw = await file.text();
+      window.StoreFlowStorage.validateState(raw);
+      const imported = migrateState(JSON.parse(raw));
       if (!window.confirm(t('message.importConfirm'))) return;
+      const before = cloneData(state);
       state = imported;
-      addActivity('activity.backupImported', file.name);
-      ensureValidSelections();
-      renderAll();
-      showToast(t('message.backupImported'));
+      if (await commitCritical(before, 'activity.backupImported', file.name)) showToast(t('message.backupImported'));
+      else showToast(t('storage.importFailed'));
     } catch (error) {
       console.error(error);
       showToast(t('message.backupInvalid'));
@@ -2836,20 +2861,32 @@
     }
   });
 
-  els.resetBtn.addEventListener('click', () => {
+  els.resetBtn.addEventListener('click', async () => {
     if (!window.confirm(t('message.resetConfirm'))) return;
     const language = state.language;
+    const before = cloneData(state);
     state = createInitialState();
     state.language = language;
-    addActivity('activity.dataReset');
-    renderAll();
-    showToast(t('message.resetDone'));
+    if (await commitCritical(before, 'activity.dataReset')) showToast(t('message.resetDone'));
   });
 
   if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:') && !location.hostname.includes('livecodes')) {
-    window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Service worker unavailable:', error)));
+    navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Service worker unavailable:', error));
   }
 
-  renderAll();
+  window.addEventListener('beforeunload', event => {
+    if (pendingSaves || !storageAvailable) { event.preventDefault(); event.returnValue = ''; }
+  });
+  $('#retryDatabaseSave').addEventListener('click', saveState);
+  await renderAll();
   switchView(currentView);
-})();
+  $('#storageStartup').hidden = true;
+  $('#appView').inert = false;
+})().catch(error => {
+  console.error('StoreFlow could not start safely:', error);
+  document.querySelector('#storageStartup').hidden = false;
+  document.querySelector('#appView').inert = true;
+  document.querySelector('#storageStartupStatus').textContent = window.StoreFlowI18n.t('en', 'storage.startFailed', { error: error.name || 'Error' });
+  document.querySelector('#storageStartupRetry').hidden = false;
+  document.querySelector('#storageStartupRetry').onclick = () => location.reload();
+});

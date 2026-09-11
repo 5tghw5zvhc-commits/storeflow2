@@ -753,3 +753,6 @@ table { min-width: 1380px; }
 .stocktake-panel { margin-bottom: 18px; } .stocktake-panel p { color: var(--muted); font-size: 12px; line-height: 1.5; margin-bottom: 0; } .stocktake-restore { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--line); font-size: 12px; } @media(max-width:600px) { .stocktake-panel .panel-head, .stocktake-restore { flex-direction: column; align-items: stretch; } }
 
 .stock-unload-button { width: 100%; margin-top: 12px; min-height: 40px; white-space: normal; }
+.storage-startup { position: fixed; inset: 0; z-index: 9999; background: #f5faf9; padding: 30vh 24px 24px; text-align: center; }
+.storage-startup[hidden] { display: none; }
+#databaseSaveStatus { overflow-wrap: anywhere; }

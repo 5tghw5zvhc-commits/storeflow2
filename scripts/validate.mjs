@@ -6,6 +6,7 @@ const requiredFiles = [
   'src/styles.css',
   'src/i18n.js',
   'src/app.js',
+  'src/storage.js',
   'manifest.webmanifest',
   'sw.js',
   'assets/icons/icon-180.png',
@@ -19,6 +20,7 @@ for (const file of requiredFiles) {
 
 const html = await readFile('index.html', 'utf8');
 const expectedReferences = [
+  'src/storage.js?v=24',
   'src/styles.css',
   'src/i18n.js',
   'src/app.js',
@@ -175,7 +177,7 @@ for (const language of expectedLanguages.slice(1)) {
 
 const referencedKeys = new Set();
 for (const match of html.matchAll(/data-i18n(?:-placeholder|-aria)?="([^"]+)"/g)) referencedKeys.add(match[1]);
-for (const match of app.matchAll(/\bt\(\s*['"]([^'"]+)['"]/g)) referencedKeys.add(match[1]);
+for (const match of app.matchAll(/(?<![.\w])t\(\s*['"]([^'"]+)['"]/g)) referencedKeys.add(match[1]);
 for (const match of app.matchAll(/\baddActivity\(\s*['"]([^'"]+)['"]/g)) referencedKeys.add(match[1]);
 const missingReferences = [...referencedKeys].filter(key => !Object.hasOwn(i18n.translations.en, key));
 if (missingReferences.length) throw new Error(`Translation keys are referenced but undefined: ${missingReferences.join(', ')}`);

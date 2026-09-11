@@ -1,10 +1,13 @@
-const CACHE_NAME = 'storeflow-shell-v23';
+const CACHE_NAME = 'storeflow-shell-v24';
 const APP_SHELL = [
   './',
   './index.html',
   './src/styles.css',
   './src/i18n.js',
   './src/app.js',
+  './src/i18n.js?v=24',
+  './src/storage.js?v=24',
+  './src/app.js?v=24',
   './manifest.webmanifest',
   './assets/icons/icon-180.png',
   './assets/icons/icon-192.png',

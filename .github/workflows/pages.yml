@@ -26,8 +26,16 @@ jobs:
 
       - name: Validate project
         run: |
+          npm ci --ignore-scripts
           node scripts/validate.mjs
+          node scripts/test-storage.mjs
           node scripts/test-planning.mjs
+
+      - name: Package public app files
+        run: |
+          mkdir -p dist
+          cp index.html manifest.webmanifest sw.js .nojekyll dist/
+          cp -R src assets dist/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
@@ -35,7 +43,7 @@ jobs:
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: dist
 
       - name: Deploy
         id: deployment

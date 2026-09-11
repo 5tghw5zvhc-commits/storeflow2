@@ -31,7 +31,7 @@ An order belongs to one project. Each order item references a master part. Packi
 
 ## Persistence
 
-The current storage adapter uses browser `localStorage` and JSON serialization. The UI displays a temporary-mode notice if storage is unavailable.
+The storage adapter uses device-local IndexedDB and JSON serialization. State and Undo commit together in a verified transaction. Legacy localStorage is read only during the initial migration and retained unchanged. The UI distinguishes pending saves, confirmed saves, quota errors, conflicting windows, and other failures; imports are successful only after commit. Initialization fails closed if existing data cannot be safely read.
 
 A cloud version should preserve the same concepts using tables such as:
 
@@ -48,4 +48,4 @@ Legacy `size` strings are migrated in length × width × height order. For examp
 
 ## Offline behaviour
 
-The service worker caches the static application shell. Operational data remains in local storage, so the current version can continue working without a network connection after its first successful load.
+The service worker caches the static application shell. Operational data remains in device-local IndexedDB, so the current version can continue working without a network connection after its first successful load.

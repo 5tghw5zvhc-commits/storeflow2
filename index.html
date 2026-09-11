@@ -14,6 +14,7 @@
 
 <link href="manifest.webmanifest" rel="manifest"/><link href="src/styles.css" rel="stylesheet"/><link href="assets/icons/icon-192.png" rel="icon"/></head>
 <body>
+<div id="storageStartup" class="storage-startup" role="status"><p id="storageStartupStatus">Opening saved data… Keep this window open.</p><button id="storageStartupRetry" hidden type="button">Retry</button></div>
 <svg aria-hidden="true" class="icon-sprite" focusable="false">
 <symbol id="icon-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5.5 9.5V21h13V9.5M9 21v-7h6v7"/></symbol>
 <symbol id="icon-projects" viewBox="0 0 24 24"><circle cx="8.5" cy="5" r="2"/><path d="m7.5 7-4 12M9.5 7l4 12M5.5 14h6"/><path d="m15 17 5.2-5.2 2 2L17 19l-3 .9z"/></symbol>
@@ -23,7 +24,7 @@
 <symbol id="icon-planning" viewBox="0 0 24 24"><path d="M8 3h8v4H8zM8 5H5v16h14V5h-3M8 11h8M8 15h3M8 18h3M14 16l2 2 4-5"/></symbol>
 <symbol id="icon-data" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/><circle cx="12" cy="12" r="7"/></symbol>
 </svg>
-<div class="app-shell" id="appView">
+<div class="app-shell" id="appView" inert>
 <aside class="sidebar">
 <div>
 <div class="brand-row">
@@ -53,7 +54,7 @@
 </div>
 </header>
 <div class="alert-bar hidden" id="alertBar"></div>
-<div class="storage-notice hidden" data-i18n="storage.temporary" id="storageNotice" role="status">Temporary preview mode: changes work now but may not remain after the page closes. Open the hosted version in Safari for permanent saving.</div>
+<div class="storage-notice hidden" id="storageNotice" role="status"></div>
 <section class="view active-view" id="dashboardView">
 <div class="stats-grid">
 <article class="stat-card"><span data-i18n="dashboard.projects">Projects</span><strong id="statProjects">0</strong><small data-i18n="dashboard.totalProjects">total projects</small></article>
@@ -147,6 +148,7 @@
 <div class="settings-grid settings-grid-single"><article class="panel language-panel"><p class="eyebrow" data-i18n="settings.languageEyebrow">LANGUAGE</p><h3 data-i18n="settings.languageTitle">Interface language</h3><p class="muted" data-i18n="settings.languageHelp">Choose the language used for StoreFlow menus, forms, warnings and messages.</p><label><span data-i18n="settings.languageLabel">Language</span><select id="languageSelect"><option value="en">English</option><option value="uk">Українська</option><option value="ru">Русский</option><option value="pl">Polski</option></select></label></article></div>
 </div>
 <div class="settings-panel hidden" data-settings-panel="data" id="settingsDataPanel" role="tabpanel">
+<article class="panel"><p id="databaseSaveStatus" role="status" aria-live="polite"></p><button class="secondary" id="retryDatabaseSave" data-i18n="storage.retry" type="button">Retry saving</button></article>
 <div class="settings-grid">
 <article class="panel"><p class="eyebrow" data-i18n="settings.backupEyebrow">BACKUP</p><h3 data-i18n="settings.exportTitle">Export your data</h3><p class="muted" data-i18n="settings.exportHelp">Download a complete JSON backup including project photos.</p><button class="primary" data-i18n="settings.exportButton" id="exportBtn">Export backup</button></article>
 <article class="panel"><p class="eyebrow" data-i18n="settings.restoreEyebrow">RESTORE</p><h3 data-i18n="settings.importTitle">Import a backup</h3><p class="muted" data-i18n="settings.importHelp">Replace the data on this device with a previous StoreFlow backup.</p><label class="secondary file-button"><span data-i18n="settings.chooseFile">Choose backup file</span><input accept="application/json" hidden="" id="importInput" type="file"/></label></article>
@@ -296,5 +298,5 @@
 </dialog>
 <div class="toast hidden" id="toast"></div>
 
-<script src="src/i18n.js"></script><script src="src/app.js"></script></body>
+<script src="src/i18n.js?v=24"></script><script src="src/storage.js?v=24"></script><script src="src/app.js?v=24"></script></body>
 </html>
