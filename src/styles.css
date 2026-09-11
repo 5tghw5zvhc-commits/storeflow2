@@ -749,3 +749,5 @@ table { min-width: 1380px; }
 .planning-table-scroll td small { display: block; color: var(--muted); margin-top: 5px; }
 .planning-short td:nth-child(2) { color: #b43b27; background: #fff3ee; }
 @media (max-width: 600px) { .planning-project { grid-template-columns: 1fr 1fr; padding: 15px; } .planning-project > strong { grid-column: 1 / -1; } .bottom-nav .nav-item { min-width: 0; padding-left: 0; padding-right: 0; } .bottom-nav .nav-item small { font-size: 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; } }
+
+.stocktake-panel { margin-bottom: 18px; } .stocktake-panel p { color: var(--muted); font-size: 12px; line-height: 1.5; margin-bottom: 0; } .stocktake-restore { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding-top: 12px; margin-top: 12px; border-top: 1px solid var(--line); font-size: 12px; } @media(max-width:600px) { .stocktake-panel .panel-head, .stocktake-restore { flex-direction: column; align-items: stretch; } }

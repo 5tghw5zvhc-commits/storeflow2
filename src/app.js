@@ -4,7 +4,7 @@
   const STORAGE_KEY = 'storeflow-state-v1';
   const UNDO_STORAGE_KEY = 'storeflow-undo-v1';
   const UNDO_COLLECTION_KEYS = ['projects', 'parts', 'orders', 'stockPallets', 'activity'];
-  const UNDO_SCALAR_KEYS = ['language', 'activeProjectId', 'selectedOrderId', 'dismissedNotices'];
+  const UNDO_SCALAR_KEYS = ['language', 'activeProjectId', 'selectedOrderId', 'dismissedNotices', 'stocktakeResets'];
   const MAX_UNDO_HISTORY = 20;
   const MAX_PERSISTED_UNDO_BYTES = 1500000;
   const I18N = window.StoreFlowI18n;
@@ -95,6 +95,7 @@
       orders: [],
       stockPallets: [],
       dismissedNotices: {},
+      stocktakeResets: [],
       activity: [
         { id: uid('activity'), textKey: 'activity.workspaceReady', detailKey: 'activity.workspaceReadyHelp', createdAt: now }
       ]
@@ -505,6 +506,10 @@
       orders,
       stockPallets,
       dismissedNotices: source.dismissedNotices && typeof source.dismissedNotices === 'object' ? { ...source.dismissedNotices } : {},
+      stocktakeResets: (Array.isArray(source.stocktakeResets) ? source.stocktakeResets : []).filter(reset => reset && Array.isArray(reset.quantities)).map(reset => ({
+        id: String(reset.id || uid('stocktake')), createdAt: String(reset.createdAt || ''), restoredAt: String(reset.restoredAt || ''),
+        quantities: reset.quantities.filter(entry => entry && Number.isFinite(Number(entry.quantity)) && Number(entry.quantity) > 0).map(entry => ({ partId: oldToNew.get(entry.partId) || String(entry.partId), quantity: Number(entry.quantity) }))
+      })),
       activity: Array.isArray(source.activity) ? source.activity : []
     };
   }
@@ -921,6 +926,8 @@
   }
 
   function renderDashboard() {
+    $('#zeroInventoryBtn').disabled = !state.parts.some(part => part.quantity > 0);
+    $('#stocktakeRestores').innerHTML = (state.stocktakeResets || []).filter(reset => !reset.restoredAt).map(reset => `<div class="stocktake-restore"><span>${esc(t('stocktake.saved', { date: formatDate(reset.createdAt), units: reset.quantities.reduce((sum, entry) => sum + entry.quantity, 0) }))}</span><button class="secondary" type="button" data-restore-stocktake="${esc(reset.id)}">${esc(t('stocktake.undo'))}</button></div>`).join('');
     const lowParts = state.parts.filter(part => part.quantity > 0 && part.quantity <= 4);
     const outParts = state.parts.filter(part => part.quantity <= 0);
 
@@ -2116,6 +2123,39 @@
     } else return;
     addActivity('planning.updated', project.name);
     renderAll();
+  });
+
+  function resetInventoryForStocktake() {
+    const quantities = state.parts.filter(part => part.quantity > 0).map(part => ({ partId: part.id, quantity: part.quantity }));
+    if (!quantities.length || !window.confirm(t('stocktake.confirm'))) return;
+    const before = cloneData(state);
+    state.stocktakeResets ||= [];
+    state.stocktakeResets.push({ id: uid('stocktake'), createdAt: new Date().toISOString(), restoredAt: '', quantities });
+    state.parts.forEach(part => { part.quantity = 0; });
+    // Commit quantities and the durable inverse together before accepting the reset.
+    if (!storageSet(STORAGE_KEY, JSON.stringify(state))) { state = before; showToast(t('stocktake.saveFailed')); return; }
+    addActivity('stocktake.resetActivity');
+    renderAll();
+  }
+
+  function restoreStocktakeReset(id) {
+    const reset = (state.stocktakeResets || []).find(reset => reset.id === id && !reset.restoredAt);
+    if (!reset || !window.confirm(t('stocktake.restoreConfirm'))) return;
+    const before = cloneData(state);
+    reset.quantities.forEach(entry => {
+      const part = state.parts.find(part => part.id === entry.partId);
+      if (part) part.quantity += entry.quantity;
+    });
+    reset.restoredAt = new Date().toISOString();
+    if (!storageSet(STORAGE_KEY, JSON.stringify(state))) { state = before; showToast(t('stocktake.saveFailed')); return; }
+    addActivity('stocktake.restoreActivity');
+    renderAll();
+  }
+
+  $('#zeroInventoryBtn').addEventListener('click', resetInventoryForStocktake);
+  $('#stocktakeRestores').addEventListener('click', event => {
+    const button = event.target.closest('[data-restore-stocktake]');
+    if (button) restoreStocktakeReset(button.dataset.restoreStocktake);
   });
 
   els.menuBtn.addEventListener('click', () => els.sidebar.classList.toggle('open'));

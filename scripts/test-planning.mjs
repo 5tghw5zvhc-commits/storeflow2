@@ -3,11 +3,12 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 const data = { projects: [{id:'p1',name:'Room A',remainingOrders:3,planningOrderId:'o1'},{id:'p2',name:'Room B',remainingOrders:2,planningOrderId:'o2'}], parts:[{id:'a',code:'SHARED',name:'Shared board',category:'Desk',quantity:3,projectIds:['p1','p2'],assemblyPosition:1,assemblyTotal:1},{id:'b',code:'SHARED',name:'Shared board',category:'Desk',quantity:0,projectIds:['p2'],assemblyPosition:1,assemblyTotal:2}], orders:[{id:'o1',projectId:'p1',name:'A',items:[{id:'i1',partId:'a',quantityNeeded:2,packed:true}]},{id:'o2',projectId:'p2',name:'B',items:[{id:'i2',partId:'a',quantityNeeded:4,packed:false},{id:'i3',partId:'b',quantityNeeded:1,packed:false}]}], stockPallets:[{id:'s1',deliveryNumber:'D',palletNumber:'1',items:[{id:'s1a',partId:'a',quantity:4},{id:'s1u',pendingName:'Shared board',matchStatus:'ambiguous',candidatePartIds:['a','b'],quantity:100}]}],activeProjectId:'p1',selectedOrderId:'o1'};
 const saved = new Map([['storeflow-state-v1',JSON.stringify(data)]]);
+let rejectStateWrites = false;
 function boot(){
  const nodes=new Map();
  const node=(key)=>{if(!nodes.has(key))nodes.set(key,{value:'',options:[],innerHTML:'',textContent:'',dataset:{},style:{},listeners:{},classList:{add(){},remove(){},toggle(){},contains(){return false}},addEventListener(e,fn){this.listeners[e]=fn},setAttribute(){},removeAttribute(){},hasAttribute(){return false},querySelector:s=>node(key+' '+s),querySelectorAll:()=>[],contains:()=>false,closest(){return this}});return nodes.get(key)};
  const document={querySelector:node,querySelectorAll:()=>[],addEventListener(){},documentElement:node('html'),body:node('body')};
- const c={FormData:class { constructor(form){this.data=form.formData||{}} get(key){return this.data[key]??null} getAll(key){return [this.data[key]].filter(v=>v!=null)} },console,document,navigator:{},location:{protocol:'file:',hostname:''},Intl,Date,Math,JSON,Map,Set,structuredClone,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:k=>saved.get(k)||null,setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)},innerWidth:390,confirm:()=>true,addEventListener(){}};
+ const c={FormData:class { constructor(form){this.data=form.formData||{}} get(key){return this.data[key]??null} getAll(key){return [this.data[key]].filter(v=>v!=null)} },console,document,navigator:{},location:{protocol:'file:',hostname:''},Intl,Date,Math,JSON,Map,Set,structuredClone,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:k=>saved.get(k)||null,setItem:(k,v)=>{if(rejectStateWrites && k==='storeflow-state-v1') throw new Error('Simulated full storage');saved.set(k,v)},removeItem:k=>saved.delete(k)},innerWidth:390,confirm:()=>true,addEventListener(){}};
  c.window=c;c.globalThis=c;vm.createContext(c);vm.runInContext(fs.readFileSync('src/i18n.js','utf8'),c);
  let app=fs.readFileSync('src/app.js','utf8');app=app.replace('  renderAll();\n  switchView(currentView);\n})();','  globalThis.testApi = { getState: () => state, calculateManufacturingPlan, renderAll, renderPlanning, migrateState, sendOrder, undoLatestChange, saveState };\n  renderAll();\n  switchView(currentView);\n})();');vm.runInContext(app,c);
  return {api:c.testApi,nodes};
@@ -80,3 +81,25 @@ nodes.get('#orderBoards').listeners.change({target:neededInput});assert.equal(sh
 api.getState().parts.find(p=>p.id==='a').quantity+=2;api.saveState();assert.equal(sharedShortage(),12);
 ({api,nodes}=boot());assert.equal(sharedShortage(),12);
 console.log('Live dependency tests passed: Inventory, pallet quantity, new pallet and contents, replacement template, per-order quantities, save-only refresh and reload.');
+
+// Stocktake reset: independent durable undo survives history expiry and reload.
+saved.clear();saved.set('storeflow-state-v1',JSON.stringify(data));({api,nodes}=boot());
+const palletBefore=JSON.stringify(api.getState().stockPallets), ordersBefore=JSON.stringify(api.getState().orders);
+nodes.get('#zeroInventoryBtn').listeners.click();
+assert.ok(api.getState().parts.every(p=>p.quantity===0));
+assert.equal(JSON.stringify(api.getState().stockPallets),palletBefore);assert.equal(JSON.stringify(api.getState().orders),ordersBefore);
+assert.equal(sharedShortage(),8);
+const resetId=api.getState().stocktakeResets[0].id;
+for(let i=0;i<25;i++) nodes.get('#inventoryCards').listeners.click({target:inventoryPlus});
+assert.equal(JSON.parse(saved.get('storeflow-undo-v1')).length,20);
+({api,nodes}=boot());assert.match(nodes.get('#stocktakeRestores').innerHTML,new RegExp(resetId));
+const restoreButton={dataset:{restoreStocktake:resetId},closest(){return this}};
+nodes.get('#stocktakeRestores').listeners.click({target:restoreButton});assert.equal(api.getState().parts[0].quantity,28);
+nodes.get('#stocktakeRestores').listeners.click({target:restoreButton});assert.equal(api.getState().parts[0].quantity,28);
+api.undoLatestChange();assert.equal(api.getState().parts[0].quantity,25);assert.equal(api.getState().stocktakeResets[0].restoredAt,'');
+nodes.get('#zeroInventoryBtn').listeners.click();assert.equal(api.getState().stocktakeResets.length,2);
+api.undoLatestChange();assert.equal(api.getState().parts[0].quantity,25);assert.equal(api.getState().stocktakeResets.length,1);
+const exported=JSON.stringify(api.getState());assert.equal(api.migrateState(JSON.parse(exported)).stocktakeResets[0].id,resetId);
+rejectStateWrites=true;nodes.get('#zeroInventoryBtn').listeners.click();rejectStateWrites=false;
+assert.equal(JSON.stringify(api.getState()),exported);assert.equal(saved.get('storeflow-state-v1'),exported);
+console.log('Stocktake tests passed: zero all Inventory, untouched pallets/orders, planning refresh, restore after 25 changes/reload, repeat-restore protection, multiple resets, undo restore, backup migration and storage-failure rollback.');
